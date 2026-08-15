@@ -1,0 +1,11 @@
+# running-job temp dirs & logs
+_work_*/
+_upscaled_*/
+_job_*.log
+
+# redundant portable zip (already extracted to exe + models)
+*.zip
+
+# generated test outputs
+test_output.png
+onepiece_demo_x2.mp4
