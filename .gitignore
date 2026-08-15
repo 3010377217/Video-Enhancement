@@ -1,9 +1,11 @@
 # running-job temp dirs & logs
+__pycache__/
 _work_*/
 _rife_work_*/
 _upscaled_*/
 _job_*.log
 _interp120_*
+_web_work/
 
 # chunked job temp files
 _seg_*.mp4

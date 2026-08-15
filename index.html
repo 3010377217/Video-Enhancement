@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>视频增强工具箱</title>
+<link rel="icon" href="data:,">
+<script src="/vue.global.prod.js"></script>
+<style>
+  :root {
+    --bg: #14171c; --panel: #1c2128; --panel2: #22272f; --line: #333a45;
+    --text: #dbe2ea; --muted: #8b97a5; --accent: #3da9fc; --accent2: #2b6cb0;
+    --ok: #3fce7f; --err: #f26d6d; --warn: #e8b34b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; font-size: 14px; }
+  [v-cloak] { display: none; }
+  #app { max-width: 860px; margin: 0 auto; padding: 24px 16px 60px; }
+  header h1 { margin: 0 0 4px; font-size: 22px; }
+  header .sub { margin: 0 0 18px; color: var(--muted); }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab { padding: 8px 16px; border: 1px solid var(--line); border-radius: 8px;
+         background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px; }
+  .tab:hover { border-color: var(--accent); }
+  .tab.active { background: var(--accent); border-color: var(--accent); color: #0b1220; font-weight: 600; }
+  .tab:disabled { opacity: .5; cursor: not-allowed; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 16px 18px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 12px; font-size: 15px; color: var(--accent); }
+  .row { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+  input[type=text], input[type=number] { background: var(--panel2); border: 1px solid var(--line);
+    color: var(--text); padding: 7px 10px; border-radius: 6px; font-size: 14px; outline: none; }
+  input[type=text]:focus, input[type=number]:focus { border-color: var(--accent); }
+  .path-input { flex: 1; min-width: 240px; }
+  input[type=number] { width: 110px; }
+  select { background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+           padding: 7px 10px; border-radius: 6px; font-size: 14px; }
+  .btn { padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px;
+         background: var(--panel2); color: var(--text); cursor: pointer; font-size: 14px; }
+  .btn:hover { border-color: var(--accent); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #0b1220; font-weight: 600; }
+  .btn.primary:hover { background: var(--accent2); }
+  .btn.danger { border-color: var(--err); color: var(--err); }
+  .seg { display: inline-flex; gap: 6px; }
+  .seg button { padding: 6px 14px; border: 1px solid var(--line); border-radius: 6px;
+                background: var(--panel2); color: var(--text); cursor: pointer; }
+  .seg button.active { background: var(--accent); border-color: var(--accent); color: #0b1220; font-weight: 600; }
+  label.lbl { display: block; margin: 10px 0 4px; color: var(--muted); }
+  .chk { display: flex; align-items: center; gap: 8px; margin: 6px 0; cursor: pointer; }
+  .hint { color: var(--muted); font-size: 13px; margin: 6px 0; }
+  .warn { color: var(--warn); font-size: 13px; margin: 6px 0; }
+  .err { color: var(--err); }
+  .ok { color: var(--ok); }
+  .probe table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+  .probe td { padding: 5px 10px 5px 0; border-bottom: 1px solid var(--line); color: var(--muted); }
+  .probe td:last-child { color: var(--text); }
+  .stage { font-size: 15px; margin: 0 0 10px; }
+  .bar { height: 18px; background: var(--panel2); border: 1px solid var(--line);
+         border-radius: 9px; overflow: hidden; }
+  .bar .fill { height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent));
+               width: 0; transition: width .25s; }
+  .bar.indet .fill { width: 40%; animation: slide 1.2s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+  .meta { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
+  .logs { background: #0c0f13; border: 1px solid var(--line); border-radius: 8px;
+          padding: 8px 10px; max-height: 220px; overflow: auto; margin-top: 10px;
+          font-family: Consolas, "Courier New", monospace; font-size: 12px; color: #9fb3c8; }
+  .log { white-space: pre-wrap; word-break: break-all; line-height: 1.45; }
+  details { margin-top: 6px; }
+  summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  .res-row { display: flex; align-items: center; gap: 8px; padding: 8px 0;
+             border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .res-row .p { flex: 1; min-width: 180px; word-break: break-all; font-family: Consolas, monospace; font-size: 13px; }
+  .recent table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .recent td { padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  .recent td:first-child { color: var(--muted); width: 80px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; }
+  .badge.done { background: #123b26; color: var(--ok); }
+  .badge.error { background: #3b1515; color: var(--err); }
+  .badge.running { background: #14324f; color: var(--accent); }
+  .badge.cancelled { background: #3a3315; color: var(--warn); }
+  .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex;
+                align-items: flex-start; justify-content: center; padding-top: 8vh; z-index: 50; }
+  .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+           width: 640px; max-width: 94vw; max-height: 76vh; display: flex; flex-direction: column; }
+  .modal .head { padding: 14px 18px; border-bottom: 1px solid var(--line); font-weight: 600; }
+  .modal .body { padding: 12px 18px; overflow: auto; flex: 1; }
+  .modal .foot { padding: 12px 18px; border-top: 1px solid var(--line); }
+  .path-crumb { color: var(--muted); font-size: 13px; word-break: break-all; margin: 6px 0 10px; }
+  .browselist { display: flex; flex-direction: column; gap: 2px; }
+  .bitem { padding: 6px 8px; border-radius: 6px; cursor: pointer; display: flex;
+           justify-content: space-between; gap: 12px; }
+  .bitem:hover { background: var(--panel2); }
+  .bitem.dir { color: var(--accent); }
+  .bitem .sz { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .gpu { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="app" v-cloak>
+
+  <header>
+    <h1>视频增强工具箱</h1>
+    <p class="sub">超分 · 补帧 · 缩放 — 本地 GPU 处理，视频不会离开这台电脑
+      <span class="gpu" v-if="gpu">（{{ gpu }}）</span>
+    </p>
+  </header>
+
+  <div class="tabs">
+    <button v-for="m in modes" :key="m.key" class="tab"
+            :class="{ active: mode === m.key }" :disabled="running"
+            @click="selectMode(m.key)">{{ m.label }}</button>
+  </div>
+
+  <!-- 输入 -->
+  <section class="card">
+    <h2>输入视频</h2>
+    <div class="row">
+      <input class="path-input" type="text" v-model="path" placeholder="粘贴视频完整路径，或点“浏览”选择"
+             :disabled="running" @keyup.enter="probePath">
+      <button class="btn" :disabled="running" @click="probePath">读取信息</button>
+      <button class="btn" :disabled="running" @click="openBrowse">浏览…</button>
+    </div>
+    <p class="warn" v-if="probeWarn">{{ probeWarn }}</p>
+    <p class="err" v-if="probeError">{{ probeError }}</p>
+    <div class="probe" v-if="probe">
+      <table>
+        <tr><td>分辨率</td><td>{{ probe.width }} × {{ probe.height }}</td></tr>
+        <tr><td>帧率</td><td>{{ probe.fps }} fps（{{ probe.fps_num }}/{{ probe.fps_den }}）</td></tr>
+        <tr><td>时长</td><td>{{ fmtDur(probe.duration) }}</td></tr>
+        <tr><td>帧数</td><td>{{ probe.frames ? fmtInt(probe.frames) : '未知' }}</td></tr>
+        <tr><td>大小</td><td>{{ fmtSize(probe.size) }}</td></tr>
+        <tr><td>所在盘剩余</td><td>{{ fmtSize(probe.free) }}</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 超分 -->
+  <section class="card" v-if="mode === 'upscale'">
+    <h2>超分参数</h2>
+    <label class="lbl">放大倍数（AI 只支持整数倍）</label>
+    <div class="seg">
+      <button v-for="s in [2,3,4]" :key="s" :class="{ active: opts.scale === s }"
+              @click="opts.scale = s" :disabled="running">{{ s }}x</button>
+    </div>
+    <label class="lbl">模型</label>
+    <select v-model="opts.model" :disabled="running" @change="onModelChange">
+      <option v-for="m in models" :key="m.name" :value="m.name">
+        {{ m.label }}{{ m.downloaded ? '' : '（未下载）' }}
+      </option>
+    </select>
+
+    <!-- 未下载模型：提示下载 -->
+    <template v-if="!running && selectedModel && !selectedModel.downloaded">
+      <p class="warn">该模型未下载（模型约 {{ selMbText }}，需下载官方模型包约 {{ selZipMbText }}）。请先下载再使用。</p>
+      <div class="row">
+        <button class="btn" :disabled="modelDlActive" @click="startModelDownload">
+          {{ modelDlActive ? '下载中…' : '下载模型' }}
+        </button>
+        <span class="hint" v-if="modelDlActive && modelDlState">{{ fmtDlProgress }}</span>
+      </div>
+      <div class="bar" :class="{ indet: modelDlPct === null }" v-if="modelDlActive">
+        <div class="fill" :style="{ width: (modelDlPct === null ? '40%' : modelDlPct) + '%' }"></div>
+      </div>
+      <p class="err" v-if="modelDlError">{{ modelDlError }}</p>
+    </template>
+
+    <!-- 人脸增强（当前引擎不支持） -->
+    <label class="chk">
+      <input type="checkbox" v-model="faceEnhance" :disabled="running"> 人脸增强（GFPGAN）
+    </label>
+    <p class="warn" v-if="faceEnhance">当前引擎不支持人脸增强，需要额外的 GFPGAN 组件（暂无现成 ncnn 版），此选项本次不生效。</p>
+
+    <p class="hint">输出：与源视频同目录，文件名追加 _x{{ opts.scale }}</p>
+  </section>
+
+  <!-- 补帧 60/45 -->
+  <section class="card" v-if="mode === 'interp'">
+    <h2>补帧输出</h2>
+    <label class="chk"><input type="checkbox" v-model="opts.want60" :disabled="running"> 60hz（2x 完整插值）</label>
+    <label class="chk"><input type="checkbox" v-model="opts.want45" :disabled="running"> 45hz（每 4 帧取 3 帧，保留原帧 + 一半插值帧）</label>
+    <p class="hint">一次 RIFE 2x 插值可同时出两版，不额外耗时。输入约 30fps 的动画效果最好。</p>
+  </section>
+
+  <!-- 补帧 120 -->
+  <section class="card" v-if="mode === 'interp120'">
+    <h2>补帧 120hz</h2>
+    <p class="hint">对 60hz 视频再做一次 2x 插值，输出约 119.88fps。建议先用“补帧 60/45”生成 60hz 版本。</p>
+  </section>
+
+  <!-- 缩放 -->
+  <section class="card" v-if="mode === 'resize'">
+    <h2>缩放参数</h2>
+    <label class="lbl">目标分辨率</label>
+    <div class="row">
+      <input type="number" v-model.number="opts.resizeW" min="16" step="2" :disabled="running">
+      <span>×</span>
+      <input type="number" v-model.number="opts.resizeH" min="16" step="2" :disabled="running">
+    </div>
+    <p class="hint">宽高会自动取偶数（yuv420p 要求）。例如 1920×1080、1280×720。</p>
+  </section>
+
+  <!-- 高级 -->
+  <section class="card">
+    <details>
+      <summary>高级</summary>
+      <div class="row">
+        <label>CHUNK（每批帧数，越小越省磁盘但更慢）</label>
+        <input type="number" v-model="opts.chunk" placeholder="自动（超分1500 / 补帧1000）" :disabled="running">
+      </div>
+      <div class="row">
+        <label>CRF（越小越清晰、文件越大）</label>
+        <input type="number" v-model.number="opts.crf" min="1" max="51" step="1" :disabled="running">
+      </div>
+    </details>
+  </section>
+
+  <!-- 操作 -->
+  <section class="card">
+    <div class="row">
+      <button class="btn primary" :disabled="!canRun" @click="startJob">开始处理</button>
+      <button class="btn danger" v-if="running" @click="cancelJob">取消</button>
+      <span class="hint" v-if="busy">上一次任务已取消</span>
+      <span class="hint" v-else-if="!running && !modelOk">所选模型未下载，请先点击“下载模型”。</span>
+    </div>
+    <p class="err" v-if="startError">{{ startError }}</p>
+  </section>
+
+  <!-- 进度 -->
+  <section class="card" v-if="running">
+    <h2>处理中</h2>
+    <p class="stage">{{ progressText }}</p>
+    <div class="bar" :class="{ indet: pct === null }">
+      <div class="fill" :style="{ width: (pct === null ? '40%' : pct + '%') }"></div>
+    </div>
+    <p class="meta">
+      <template v-if="pct !== null">已完成 {{ Math.round(pct) }}%</template>
+      <template v-if="progress && progress.fps"> · 约 {{ fmtFps(progress.fps) }} 帧/秒</template>
+      <template v-if="progress && progress.eta"> · 剩余约 {{ fmtDur(progress.eta) }}</template>
+      · 已用 {{ fmtDur(elapsed) }}
+    </p>
+    <button class="btn" @click="showLogs = !showLogs">{{ showLogs ? '收起日志' : '显示日志（' + logs.length + '）' }}</button>
+    <div class="logs" v-if="showLogs">
+      <div v-for="(l, i) in logs" :key="i" class="log">{{ l }}</div>
+    </div>
+  </section>
+
+  <!-- 结果 -->
+  <section class="card" v-if="result && result.length">
+    <h2 class="ok">完成</h2>
+    <div v-for="o in result" :key="o" class="res-row">
+      <span class="p">{{ o }}</span>
+      <button class="btn" @click="openFolder(o)">打开所在文件夹</button>
+      <button class="btn" @click="openFile(o)">打开文件</button>
+    </div>
+  </section>
+
+  <!-- 出错 -->
+  <section class="card" v-if="jobError">
+    <h2 class="err">出错了</h2>
+    <p class="err">{{ jobError }}</p>
+    <p class="hint">请展开日志查看详细报错。</p>
+  </section>
+
+  <!-- 最近任务 -->
+  <section class="card recent" v-if="recentJobs.length">
+    <h2>最近任务</h2>
+    <table>
+      <tr v-for="j in recentJobs" :key="j.id">
+        <td>{{ modeLabel(j.mode) }}</td>
+        <td class="hint">{{ shortName(j.src) }}</td>
+        <td style="text-align:right">
+          <span class="badge" :class="j.status">{{ statusLabel(j.status) }}</span>
+        </td>
+      </tr>
+    </table>
+  </section>
+
+  <!-- 文件浏览器 -->
+  <div class="modal-mask" v-if="browseVisible" @click.self="browseVisible = false">
+    <div class="modal">
+      <div class="head">选择视频文件</div>
+      <div class="body">
+        <div class="row">
+          <button class="btn" @click="browseGo(browseData ? browseData.parent : null)"
+                  :disabled="!browseData || browseData.parent === browseData.current">上级</button>
+          <button class="btn" @click="browseHome">主目录</button>
+        </div>
+        <p class="path-crumb">{{ browseData ? browseData.current : '…' }}</p>
+        <div class="browselist">
+          <div v-for="d in (browseData ? browseData.dirs : [])" :key="d" class="bitem dir" @click="browseGo(joinPath(browseData.current, d))">
+            <span>{{ d }}</span><span></span>
+          </div>
+          <div v-for="f in (browseData ? browseData.videos : [])" :key="f.name" class="bitem"
+               @click="pickFile(joinPath(browseData.current, f.name))">
+            <span>{{ f.name }}</span><span class="sz">{{ fmtSize(f.size) }}</span>
+          </div>
+          <p class="hint" v-if="browseData && browseData.videos.length === 0">（此目录没有视频文件）</p>
+          <p class="err" v-if="browseError">{{ browseError }}</p>
+        </div>
+      </div>
+      <div class="foot">
+        <input class="path-input" type="text" v-model="browsePathInput"
+               placeholder="直接输入路径后回车" @keyup.enter="browseGo(browsePathInput)">
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
