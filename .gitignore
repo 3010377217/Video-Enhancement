@@ -1,10 +1,25 @@
 # running-job temp dirs & logs
 _work_*/
+_rife_work_*/
 _upscaled_*/
 _job_*.log
+_interp120_*
+
+# chunked job temp files
+_seg_*.mp4
+_segs_*.txt
+_fps.txt
+_t.txt
+_audio_*.m4a
+_concat_*.mp4
 
 # redundant portable zip (already extracted to exe + models)
 *.zip
+
+# rife interpolation tool - track only the exe + v4.6 model (~19MB);
+# the other bundled models are unused and stay local
+rife-ncnn-vulkan-20221029-windows/rife*/
+!rife-ncnn-vulkan-20221029-windows/rife-v4.6/
 
 # generated test outputs
 test_output.png

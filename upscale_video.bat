@@ -60,7 +60,7 @@ if exist "%SEGLIST%" del "%SEGLIST%"
 set /a START_IDX=(%CHUNK_N%-1)*%CHUNK%
 
 rem start time (seconds) = START_IDX / (FN/FD), floating point
-powershell -NoProfile -Command "$s=%START_IDX%; $d=[double]%FD%/%FN%; [Console]::WriteLine(([double]$s*$d).ToString('0.000000',[System.Globalization.CultureInfo]::InvariantCulture))" > "%APPDIR%_t.txt"
+powershell -NoProfile -Command "$s=%START_IDX%+0.5; $d=[double]%FD%/%FN%; [Console]::WriteLine(([double]$s*$d).ToString('0.000000',[System.Globalization.CultureInfo]::InvariantCulture))" > "%APPDIR%_t.txt"
 set /p STIME=<"%APPDIR%_t.txt"
 
 rem extract this chunk's frames
