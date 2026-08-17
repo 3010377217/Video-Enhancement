@@ -26,3 +26,20 @@ rife-ncnn-vulkan-20221029-windows/rife*/
 # generated test outputs
 test_output.png
 onepiece_demo_x2.mp4
+
+# local outputs from the advanced helper scripts
+/.work/
+/.rebuild/
+/process.log
+/timings.csv
+/gpu_monitor.log
+
+# local experiments and diagnostics; promote only after making them reusable
+/_*.txt
+/_probe_*.png
+/_reprocess_*.py
+/frame_match_probe.py
+/interp_120.py
+/test_720p*.py
+/test_direct2x.py
+/upscale_speed.json
