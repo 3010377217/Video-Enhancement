@@ -19,6 +19,7 @@ createApp({
     const probeError = ref('');
     const opts = reactive({
       scale: 2, model: 'realesr-animevideov3', want60: true, want45: true,
+      realcuganModel: 'models-se', noiseLevel: 0,
       resizeW: 1920, resizeH: 1080, chunk: null, crf: 18,
     });
     const running = ref(false);
@@ -38,6 +39,11 @@ createApp({
     const browsePathInput = ref('');
     const browseError = ref('');
     const models = ref([]);
+    const engines = ref({});
+    const cuganModels = ref([]);
+    const cuganNoiseLevels = ref([]);
+    const cuganCapabilities = ref({});
+    const engine = ref('realesrgan');
     const faceEnhance = ref(false);
     const modelDlState = ref(null);
     const modelDlError = ref('');
@@ -47,7 +53,31 @@ createApp({
 
     const canRun = computed(() => !running.value && !!path.value && !!probe.value && !probeError.value && modelOk.value);
     const selectedModel = computed(() => models.value.find(m => m.name === opts.model) || null);
-    const modelOk = computed(() => mode.value !== 'upscale' || !selectedModel.value || selectedModel.value.downloaded);
+    const engineAvailable = computed(() => {
+      if (mode.value !== 'upscale' || engine.value === 'realesrgan') {
+        return !engines.value.realesrgan || engines.value.realesrgan.available !== false;
+      }
+      return !!(engines.value.video2x && engines.value.video2x.available);
+    });
+    const compatibleCuganModels = computed(() => cuganModels.value.filter(m => {
+      const capability = cuganCapabilities.value[m.name];
+      return capability && capability[opts.scale];
+    }));
+    const cuganNoiseOptions = computed(() => {
+      const capability = cuganCapabilities.value[opts.realcuganModel];
+      const allowed = (capability && capability[opts.scale]) || [];
+      return cuganNoiseLevels.value.filter(n => allowed.includes(n.value));
+    });
+    const cuganConfigOk = computed(() => cuganNoiseOptions.value.some(n => n.value === opts.noiseLevel));
+    const modelOk = computed(() => {
+      if (mode.value !== 'upscale') return true;
+      if (!engineAvailable.value) return false;
+      return engine.value === 'video2x'
+        ? cuganConfigOk.value
+        : !selectedModel.value
+        || selectedModel.value.downloaded;
+    });
+    const selectedEngineLabel = computed(() => engine.value === 'video2x' ? 'Video2X / Real-CUGAN' : 'Real-ESRGAN');
     const modelDlActive = computed(() => !!modelDlState.value && modelDlState.value.state === 'running');
     const modelDlPct = computed(() => {
       const s = modelDlState.value;
@@ -131,6 +161,11 @@ createApp({
       try {
         const r = await api('GET', '/api/models');
         models.value = r.models || [];
+        engines.value = r.engines || {};
+        cuganModels.value = r.realcugan_models || [];
+        cuganNoiseLevels.value = r.realcugan_noise_levels || [];
+        cuganCapabilities.value = r.realcugan_capabilities || {};
+        ensureCuganSelection();
         if (mode.value === 'upscale' && !models.value.some(m => m.name === opts.model)) {
           const dl = models.value.find(m => m.downloaded);
           if (dl) opts.model = dl.name;
@@ -139,6 +174,25 @@ createApp({
     }
 
     function onModelChange() { modelDlError.value = ''; }
+    function onEngineChange() { modelDlError.value = ''; startError.value = ''; }
+    function ensureCuganSelection() {
+      const available = compatibleCuganModels.value;
+      if (!available.length) return;
+      if (!available.some(m => m.name === opts.realcuganModel)) {
+        const recommended = available.find(m => m.name === 'models-se');
+        opts.realcuganModel = (recommended || available[0]).name;
+      }
+      const noise = cuganNoiseOptions.value;
+      if (noise.length && !noise.some(n => n.value === opts.noiseLevel)) {
+        const recommended = noise.find(n => n.value === 0);
+        opts.noiseLevel = (recommended || noise[0]).value;
+      }
+    }
+    function setScale(scale) {
+      opts.scale = scale;
+      ensureCuganSelection();
+    }
+    function onCuganModelChange() { ensureCuganSelection(); }
 
     async function startModelDownload() {
       if (!selectedModel.value) return;
@@ -179,7 +233,10 @@ createApp({
       startError.value = ''; jobError.value = ''; result.value = null; busy.value = false;
       const body = {
         mode: mode.value, path: path.value,
+        engine: engine.value,
         scale: opts.scale, model: opts.model,
+        realcugan_model: opts.realcuganModel,
+        noise_level: opts.noiseLevel,
         want60: opts.want60, want45: opts.want45,
         width: opts.resizeW, height: opts.resizeH,
         chunk: opts.chunk ? Math.max(1, Math.floor(Number(opts.chunk))) : null,
@@ -294,10 +351,10 @@ createApp({
     return { modes, mode, path, probe, probeWarn, probeError, opts, running, stage, progress,
              logs, showLogs, elapsed, result, jobError, startError, busy, recentJobs, gpu,
              browseVisible, browseData, browsePathInput, browseError,
-             models, faceEnhance, modelDlState, modelDlError,
-             selectedModel, modelOk, modelDlActive, modelDlPct, fmtDlProgress, selMbText, selZipMbText,
+             models, engines, cuganModels, cuganNoiseLevels, compatibleCuganModels, cuganNoiseOptions, engine, faceEnhance, modelDlState, modelDlError,
+             selectedModel, engineAvailable, selectedEngineLabel, modelOk, modelDlActive, modelDlPct, fmtDlProgress, selMbText, selZipMbText,
              canRun, pct, progressText, selectMode, probePath, openBrowse, browseGo, browseHome,
-             joinPath, pickFile, loadModels, onModelChange, startModelDownload,
+             joinPath, pickFile, loadModels, onModelChange, onEngineChange, setScale, onCuganModelChange, startModelDownload,
              startJob, cancelJob, openFolder, openFile,
              fmtSize, fmtDur, fmtInt, fmtFps, modeLabel, statusLabel, shortName };
   },

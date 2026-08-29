@@ -6,6 +6,7 @@ _upscaled_*/
 _job_*.log
 _interp120_*
 _web_work/
+_cugan_keep_*/
 
 # chunked job temp files
 _seg_*.mp4
@@ -22,6 +23,10 @@ _concat_*.mp4
 # the other bundled models are unused and stay local
 rife-ncnn-vulkan-20221029-windows/rife*/
 !rife-ncnn-vulkan-20221029-windows/rife-v4.6/
+
+# optional Video2X Windows package (install locally, do not commit its binaries)
+video2x/
+Video2X/
 
 # generated test outputs
 test_output.png

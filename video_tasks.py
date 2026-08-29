@@ -1,6 +1,7 @@
 # video_tasks.py
 # Chunked video pipelines for the local Web GUI:
-#   upscale (Real-ESRGAN) / interp 60+45 (RIFE) / interp 120 (RIFE 2x) / resize (ffmpeg)
+#   upscale (Real-ESRGAN or Video2X/Real-CUGAN) / interp 60+45 (RIFE) /
+#   interp 120 (RIFE 2x) / resize (ffmpeg)
 # Ported faithfully from upscale_video.bat / interp_video.bat / interp120_video.bat.
 
 import json
@@ -21,6 +22,7 @@ REALESRGAN_EXE = os.path.join(APP_DIR, "realesrgan-ncnn-vulkan.exe")
 RIFE_EXE = os.path.join(APP_DIR, "rife-ncnn-vulkan-20221029-windows", "rife-ncnn-vulkan.exe")
 RIFE_MODEL = os.path.join(APP_DIR, "rife-ncnn-vulkan-20221029-windows", "rife-v4.6")
 WORK_ROOT = os.path.join(APP_DIR, "_web_work")
+VIDEO2X_ENV = "VIDEO2X_EXE"
 
 CREATE_NO_WINDOW = 0x08000000
 VIDEO_EXT = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".flv", ".m4v", ".ts", ".mpg", ".mpeg", ".wmv"}
@@ -43,6 +45,84 @@ MODELS = [
                   "zip_mb": 75, "files": ["models/realesrnet-x4plus.param", "models/realesrnet-x4plus.bin"]}},
 ]
 MODELS_BY_NAME = {m["name"]: m for m in MODELS}
+
+# Video2X ships Real-CUGAN and its model files separately from this project.
+# Keep the choices explicit so the UI can expose only supported CLI values.
+REALCUGAN_MODELS = [
+    {"name": "models-nose", "label": "Real-CUGAN Nose（仅 2x、无降噪）"},
+    {"name": "models-pro", "label": "Real-CUGAN Pro（2x / 3x）"},
+    {"name": "models-se", "label": "Real-CUGAN SE（推荐，2x / 3x / 4x）"},
+]
+REALCUGAN_MODELS_BY_NAME = {m["name"]: m for m in REALCUGAN_MODELS}
+REALCUGAN_NOISE_LEVELS = [
+    {"value": 0, "label": "0：不降噪"},
+    {"value": 1, "label": "1：轻度降噪"},
+    {"value": 2, "label": "2：较强降噪"},
+    {"value": 3, "label": "3：强降噪"},
+]
+REALCUGAN_NOISE_VALUES = {n["value"] for n in REALCUGAN_NOISE_LEVELS}
+REALCUGAN_CAPABILITIES = {
+    "models-nose": {2: [0]},
+    "models-pro": {2: [0, 3], 3: [0, 3]},
+    "models-se": {2: [0, 1, 2, 3], 3: [0, 3], 4: [0, 3]},
+}
+
+
+def validate_realcugan_config(model, scale, noise_level):
+    """Reject model/scale/noise combinations not bundled by Video2X."""
+    if model not in REALCUGAN_MODELS_BY_NAME:
+        raise ValueError(f"未知 Real-CUGAN 模型: {model}")
+    supported = REALCUGAN_CAPABILITIES[model]
+    if scale not in supported:
+        scales = "、".join(str(value) for value in supported)
+        raise ValueError(f"{model} 仅支持 {scales}x 放大")
+    if noise_level not in supported[scale]:
+        levels = "、".join(str(value) for value in supported[scale])
+        raise ValueError(f"{model} 在 {scale}x 时仅支持降噪等级 {levels}")
+
+
+def find_video2x_exe():
+    """Find a Video2X executable without requiring a global installation."""
+    candidates = []
+    configured = os.environ.get(VIDEO2X_ENV)
+    if configured:
+        configured = os.path.abspath(os.path.expandvars(configured))
+        if os.path.isdir(configured):
+            candidates.append(os.path.join(configured, "video2x.exe"))
+            candidates.append(os.path.join(configured, "video2x"))
+        else:
+            candidates.append(configured)
+    candidates.extend([
+        os.path.join(APP_DIR, "video2x.exe"),
+        os.path.join(APP_DIR, "video2x", "video2x.exe"),
+        os.path.join(APP_DIR, "video2x", "video2x"),
+        os.path.join(APP_DIR, "Video2X", "video2x.exe"),
+        os.path.join(APP_DIR, "Video2X", "video2x"),
+    ])
+    for candidate in candidates:
+        if os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+    return shutil.which("video2x.exe") or shutil.which("video2x")
+
+
+def video2x_info():
+    exe = find_video2x_exe()
+    return {
+        "available": bool(exe),
+        "path": exe,
+        "env": VIDEO2X_ENV,
+        "hint": "将 Video2X Windows 包解压到 video2x\\，或设置 VIDEO2X_EXE 环境变量",
+    }
+
+
+def engine_info():
+    return {
+        "realesrgan": {
+            "available": os.path.isfile(REALESRGAN_EXE),
+            "label": "Real-ESRGAN（现有方案）",
+        },
+        "video2x": video2x_info(),
+    }
 
 
 def model_downloaded(name):
@@ -514,8 +594,78 @@ def _probe_fps(src, rep):
     return p
 
 
+def run_video2x(job, work):
+    """Run Video2X directly on the source video using its Real-CUGAN processor."""
+    src, opts, rep = job.src, job.opts, job.rep
+    exe = find_video2x_exe()
+    if not exe:
+        raise RuntimeError(
+            "未找到 Video2X。请将 Windows 包解压到项目的 video2x\\ 目录，"
+            "或设置 VIDEO2X_EXE 环境变量后重试"
+        )
+    scale = int(opts.get("scale", 2))
+    if scale not in (2, 3, 4):
+        raise RuntimeError("Video2X 超分倍率只能是 2、3 或 4")
+    cugan_model = opts.get("realcugan_model", "models-se")
+    try:
+        noise_level = int(opts.get("noise_level", 0))
+    except (TypeError, ValueError):
+        raise RuntimeError("Real-CUGAN 降噪等级必须是 0 到 3 的整数")
+    try:
+        validate_realcugan_config(cugan_model, scale, noise_level)
+    except ValueError as e:
+        raise RuntimeError(str(e))
+    crf = int(opts.get("crf", 18))
+    p = _probe_fps(src, rep)
+    meter = ProgressMeter(rep, p["frames"])
+    noise_tag = "m1" if noise_level < 0 else str(noise_level)
+    outfile = _out_path(src, f"_x{scale}_cugan_n{noise_tag}")
+    rep.stage(f"Video2X / Real-CUGAN x{scale} · 降噪 {noise_level}")
+    cmd = [
+        exe, "-i", src, "-o", outfile,
+        "-p", "realcugan", "-s", str(scale), f"--noise-level={noise_level}",
+        "--realcugan-model", cugan_model,
+        "-c", "libx264", "-e", f"crf={crf}",
+    ]
+    rep.log("执行 Video2X: " + subprocess.list2cmdline(cmd))
+
+    percent_re = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+    frame_re = re.compile(r"(?:frame|frames)\s*[:=]?\s*(\d+)(?:\s*/\s*(\d+))?", re.I)
+
+    def on_line(line):
+        rep.log(line)
+        match = percent_re.search(line)
+        if match:
+            value = max(0.0, min(100.0, float(match.group(1))))
+            meter.step(value / 100.0, f"Video2X {value:.1f}%")
+            return
+        match = frame_re.search(line)
+        if match and p["frames"]:
+            current = int(match.group(1))
+            total = int(match.group(2)) if match.group(2) else p["frames"]
+            meter.step(current / max(total, 1), f"Video2X {current}/{total}")
+
+    rc = job.runner.run(cmd, cwd=os.path.dirname(exe), on_stdout=on_line, on_stderr=on_line)
+    _check_cancel(job)
+    if not os.path.isfile(outfile):
+        raise RuntimeError(f"Video2X / Real-CUGAN 失败 (exit {rc})，未找到输出视频")
+    try:
+        probe_video(outfile)
+    except Exception as e:
+        raise RuntimeError(f"Video2X 输出视频无法读取 (exit {rc}): {e}")
+    if rc != 0:
+        rep.log(f"警告：Video2X 返回 exit {rc}，但输出视频已成功生成并通过读取校验；继续完成任务")
+    meter.step(1.0, "Video2X 完成")
+    return [outfile]
+
+
 def run_upscale(job, work):
     src, opts, rep = job.src, job.opts, job.rep
+    engine = opts.get("engine", "realesrgan")
+    if engine == "video2x":
+        return run_video2x(job, work)
+    if engine != "realesrgan":
+        raise RuntimeError(f"未知超分引擎: {engine}")
     scale = int(opts.get("scale", 2))
     model = opts.get("model", "realesr-animevideov3")
     if model not in MODELS_BY_NAME:

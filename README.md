@@ -1,4 +1,4 @@
-# Real-ESRGAN NCNN Vulkan 便携版（动漫视频超分）
+# 视频增强工具箱（Real-ESRGAN / Video2X / RIFE）
 
 基于 [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) 官方 NCNN Vulkan 便携版，封装了一个 ffmpeg 批处理脚本，把"抽帧 → 超分 → 合帧（保留音频）"串成一条命令。
 
@@ -35,6 +35,35 @@ upscale_video.bat <视频路径> [放大倍数]
 - 帧率保持不变（只超分、不补帧）
 - 临时文件 `_work_*` / `_seg_*.mp4` / `_segs_*.txt` 处理完自动删除
 - 时间参考（854x480 源，NVIDIA T1200，CHUNK=1500）：约 0.2 秒/帧，27 分钟视频约 3 小时
+
+## 两种 AI 超分引擎
+
+Web 界面的“超分”页现在可以选择两条路线：
+
+- **Real-ESRGAN**：项目自带 `realesrgan-ncnn-vulkan.exe` 和动漫模型，继续使用上面的分块抽帧流程。
+- **Video2X / Real-CUGAN**：Video2X 直接读取视频并输出视频，推荐 `2x` 并从 Real-CUGAN 降噪等级 `0` 或 `1` 开始测试。输出文件名会追加 `_cugan_n0`、`_cugan_n1` 等后缀，便于和 Real-ESRGAN 结果做对比。
+
+Video2X 是可选的外部运行时，未随仓库提交。配置方式任选其一：
+
+1. 将兼容当前 Video2X CLI 的 Windows 包解压到项目目录 `video2x\\`，确保其中有 `video2x.exe`。
+2. 设置环境变量 `VIDEO2X_EXE`，值为 `video2x.exe` 的完整路径。
+
+启动 `webui.bat` 后，超分引擎状态会显示在选择项中。未配置 Video2X 时，Real-ESRGAN 仍可正常使用；选择 Video2X 会给出配置提示。
+
+Video2X 模式不会使用 `CHUNK` 参数，因为视频解码、处理和编码由 Video2X 自己完成；Real-ESRGAN 模式仍按分块流程运行。
+
+### 2x 超分后缩回原分辨率
+
+`upscale_keep_size_video2x.bat` 用于“文件标称分辨率较高、实际观感偏糊”的片源：先由 Real-CUGAN 放大 2 倍，再以 Lanczos 缩回源视频的原始宽高。它保持帧率、复制全部音轨，输出文件名追加 `_cugan2x_keep_<宽>x<高>`。
+
+```
+upscale_keep_size_video2x.bat "D:\videos\anime.mp4"
+upscale_keep_size_video2x.bat "D:\videos\anime.mp4" 1
+```
+
+- 默认：`models-se + 2x + noise 0`。
+- 第二个参数为降噪等级：`0`、`1`、`2`、`3`。
+- 脚本会产生一个临时的 2 倍分辨率视频；建议预留至少相当于最终输出文件大小的额外空间。脚本会读取源视频帧数；如果 Video2X 输出少了尾部帧，会自动复制最后一帧补齐，不会把帧率写死为 24fps。处理失败时该临时文件会保留，方便查看错误日志。
 
 ---
 

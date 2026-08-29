@@ -69,7 +69,10 @@ def models():
         out.append({"name": m["name"], "label": m["label"], "mb": m["mb"],
                     "downloaded": vt.model_downloaded(m["name"]),
                     "zip_mb": d["zip_mb"] if d else None})
-    return {"models": out}
+    return {"models": out, "engines": vt.engine_info(),
+            "realcugan_models": vt.REALCUGAN_MODELS,
+            "realcugan_noise_levels": vt.REALCUGAN_NOISE_LEVELS,
+            "realcugan_capabilities": vt.REALCUGAN_CAPABILITIES}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -186,8 +189,24 @@ class Handler(BaseHTTPRequestHandler):
         mode, src = b.get("mode"), b.get("path")
         if mode not in {"upscale", "interp", "interp120", "resize"}:
             return self._json({"error": "未知模式"}, 400)
-        if mode == "upscale" and b.get("model") not in vt.MODELS_BY_NAME:
-            return self._json({"error": "未知模型"}, 400)
+        if mode == "upscale":
+            engine = b.get("engine", "realesrgan")
+            if engine not in {"realesrgan", "video2x"}:
+                return self._json({"error": "未知超分引擎"}, 400)
+            if engine == "realesrgan" and b.get("model") not in vt.MODELS_BY_NAME:
+                return self._json({"error": "未知 Real-ESRGAN 模型"}, 400)
+            if engine == "video2x":
+                if not vt.video2x_info()["available"]:
+                    return self._json({"error": "未找到 Video2X，请先配置 VIDEO2X_EXE 或项目 video2x\\ 目录"}, 400)
+                try:
+                    noise_level = int(b.get("noise_level", 0))
+                except (TypeError, ValueError):
+                    return self._json({"error": "Real-CUGAN 降噪等级必须是 0 到 3 的整数"}, 400)
+                try:
+                    vt.validate_realcugan_config(
+                        b.get("realcugan_model", "models-se"), int(b.get("scale", 2)), noise_level)
+                except (TypeError, ValueError) as e:
+                    return self._json({"error": str(e)}, 400)
         if not src or not os.path.isfile(src):
             return self._json({"error": "文件不存在"}, 400)
         with lock:

@@ -143,28 +143,53 @@
     <label class="lbl">放大倍数（AI 只支持整数倍）</label>
     <div class="seg">
       <button v-for="s in [2,3,4]" :key="s" :class="{ active: opts.scale === s }"
-              @click="opts.scale = s" :disabled="running">{{ s }}x</button>
+              @click="setScale(s)" :disabled="running">{{ s }}x</button>
     </div>
-    <label class="lbl">模型</label>
-    <select v-model="opts.model" :disabled="running" @change="onModelChange">
-      <option v-for="m in models" :key="m.name" :value="m.name">
-        {{ m.label }}{{ m.downloaded ? '' : '（未下载）' }}
-      </option>
-    </select>
+    <label class="lbl">超分引擎</label>
+    <div class="seg">
+      <button :class="{ active: engine === 'realesrgan' }" @click="engine = 'realesrgan'; onEngineChange()"
+              :disabled="running">Real-ESRGAN</button>
+      <button :class="{ active: engine === 'video2x' }" @click="engine = 'video2x'; onEngineChange()"
+              :disabled="running">Video2X / Real-CUGAN</button>
+    </div>
 
-    <!-- 未下载模型：提示下载 -->
-    <template v-if="!running && selectedModel && !selectedModel.downloaded">
-      <p class="warn">该模型未下载（模型约 {{ selMbText }}，需下载官方模型包约 {{ selZipMbText }}）。请先下载再使用。</p>
-      <div class="row">
-        <button class="btn" :disabled="modelDlActive" @click="startModelDownload">
-          {{ modelDlActive ? '下载中…' : '下载模型' }}
-        </button>
-        <span class="hint" v-if="modelDlActive && modelDlState">{{ fmtDlProgress }}</span>
-      </div>
-      <div class="bar" :class="{ indet: modelDlPct === null }" v-if="modelDlActive">
-        <div class="fill" :style="{ width: (modelDlPct === null ? '40%' : modelDlPct) + '%' }"></div>
-      </div>
-      <p class="err" v-if="modelDlError">{{ modelDlError }}</p>
+    <template v-if="engine === 'realesrgan'">
+      <label class="lbl">模型</label>
+      <select v-model="opts.model" :disabled="running" @change="onModelChange">
+        <option v-for="m in models" :key="m.name" :value="m.name">
+          {{ m.label }}{{ m.downloaded ? '' : '（未下载）' }}
+        </option>
+      </select>
+
+      <!-- 未下载模型：提示下载 -->
+      <template v-if="!running && selectedModel && !selectedModel.downloaded">
+        <p class="warn">该模型未下载（模型约 {{ selMbText }}，需下载官方模型包约 {{ selZipMbText }}）。请先下载再使用。</p>
+        <div class="row">
+          <button class="btn" :disabled="modelDlActive" @click="startModelDownload">
+            {{ modelDlActive ? '下载中…' : '下载模型' }}
+          </button>
+          <span class="hint" v-if="modelDlActive && modelDlState">{{ fmtDlProgress }}</span>
+        </div>
+        <div class="bar" :class="{ indet: modelDlPct === null }" v-if="modelDlActive">
+          <div class="fill" :style="{ width: (modelDlPct === null ? '40%' : modelDlPct) + '%' }"></div>
+        </div>
+        <p class="err" v-if="modelDlError">{{ modelDlError }}</p>
+      </template>
+    </template>
+
+    <template v-else>
+      <label class="lbl">Real-CUGAN 模型</label>
+      <select v-model="opts.realcuganModel" :disabled="running" @change="onCuganModelChange">
+        <option v-for="m in compatibleCuganModels" :key="m.name" :value="m.name">{{ m.label }}</option>
+      </select>
+      <label class="lbl">降噪等级</label>
+      <select v-model.number="opts.noiseLevel" :disabled="running">
+        <option v-for="n in cuganNoiseOptions" :key="n.value" :value="n.value">{{ n.label }}</option>
+      </select>
+      <p class="warn" v-if="engines.video2x && !engines.video2x.available">
+        未找到 Video2X。请将 Windows 包解压到项目的 video2x\ 目录，或设置 VIDEO2X_EXE 环境变量。
+      </p>
+      <p class="hint" v-else>Video2X 直接读取视频并输出结果；推荐从降噪 0 或 1 开始测试。</p>
     </template>
 
     <!-- 人脸增强（当前引擎不支持） -->
@@ -173,7 +198,8 @@
     </label>
     <p class="warn" v-if="faceEnhance">当前引擎不支持人脸增强，需要额外的 GFPGAN 组件（暂无现成 ncnn 版），此选项本次不生效。</p>
 
-    <p class="hint">输出：与源视频同目录，文件名追加 _x{{ opts.scale }}</p>
+    <p class="hint" v-if="engine === 'realesrgan'">输出：与源视频同目录，文件名追加 _x{{ opts.scale }}</p>
+    <p class="hint" v-else>输出：与源视频同目录，文件名追加 _x{{ opts.scale }}_cugan_n{{ opts.noiseLevel < 0 ? 'm1' : opts.noiseLevel }}</p>
   </section>
 
   <!-- 补帧 60/45 -->
@@ -207,7 +233,7 @@
     <details>
       <summary>高级</summary>
       <div class="row">
-        <label>CHUNK（每批帧数，越小越省磁盘但更慢）</label>
+        <label>CHUNK（Real-ESRGAN 每批帧数；Video2X 直通模式不使用）</label>
         <input type="number" v-model="opts.chunk" placeholder="自动（超分1500 / 补帧1000）" :disabled="running">
       </div>
       <div class="row">
@@ -223,7 +249,8 @@
       <button class="btn primary" :disabled="!canRun" @click="startJob">开始处理</button>
       <button class="btn danger" v-if="running" @click="cancelJob">取消</button>
       <span class="hint" v-if="busy">上一次任务已取消</span>
-      <span class="hint" v-else-if="!running && !modelOk">所选模型未下载，请先点击“下载模型”。</span>
+      <span class="hint" v-else-if="!running && engine === 'video2x' && !engineAvailable">未找到 Video2X，请先配置运行时。</span>
+      <span class="hint" v-else-if="!running && engine === 'realesrgan' && !modelOk">所选模型未下载，请先点击“下载模型”。</span>
     </div>
     <p class="err" v-if="startError">{{ startError }}</p>
   </section>
