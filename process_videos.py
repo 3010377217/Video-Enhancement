@@ -6,6 +6,7 @@
 
 import argparse
 import csv
+from concurrent.futures import ThreadPoolExecutor
 import json
 import math
 import os
@@ -281,14 +282,13 @@ def process_one(src, out, index, total, chunk):
     if chunk <= 0:
         return process_one_full(src, out, scale_str, new_fps_num, fd, src_dur)
 
-    # ---- 分块处理：限制磁盘峰值（每块只有 ~1.2GB 中间帧） ----
-    indir = os.path.join(WORK, "in")
+    # ---- 分块处理：双缓冲预取，峰值约为当前块 + 下一块输入帧 ----
+    input_dirs = [os.path.join(WORK, "in_a"), os.path.join(WORK, "in_b")]
     updir = os.path.join(WORK, "up")
     rifedir = os.path.join(WORK, "rife")
     segdir = os.path.join(WORK, "seg")
-    for d in (indir, updir, rifedir, segdir):
+    for d in (*input_dirs, updir, rifedir, segdir):
         rm(d)
-    os.makedirs(indir, exist_ok=True)
     os.makedirs(segdir, exist_ok=True)
     seglist = os.path.join(WORK, "segments.txt")
 
@@ -296,25 +296,44 @@ def process_one(src, out, index, total, chunk):
     total_in = total_out = 0
     segs = []
     n_chunks = max(1, math.ceil(total_frames / chunk)) if total_frames else 0
-    with open(seglist, "w", encoding="utf-8") as sl:
-        start_idx = 0
-        chunk_n = 1
-        while True:
-            os.makedirs(indir, exist_ok=True)
-            t_stage = time.monotonic()
-            # stime 必须是 start_idx 帧的精确时间（帧级对齐，勿加 0.5：实测会跳过一帧）
-            stime = start_idx * fd / fn
-            r = run(["ffmpeg", "-y", "-nostats", "-loglevel", "error",
-                     "-i", src, "-ss", f"{stime:.6f}", "-frames:v", str(chunk),
-                     "-vf", f"scale={scale_str}:flags=lanczos",
-                     "-qscale:v", "2", os.path.join(indir, "f_%08d.jpg")])
-            cnt = count_files(indir)
-            if cnt == 0:
-                log(f"  分块 {chunk_n-1}/{n_chunks or '?'}: 已到视频末尾，结束")
-                break
-            extract_s += time.monotonic() - t_stage
+    def extract_chunk(start_idx, chunk_n, input_dir):
+        """Extract one chunk; this runs in the prefetch worker."""
+        rm(input_dir)
+        os.makedirs(input_dir, exist_ok=True)
+        t_stage = time.monotonic()
+        # stime 必须是 start_idx 帧的精确时间（帧级对齐，勿加 0.5：实测会跳过一帧）
+        stime = start_idx * fd / fn
+        result = run(["ffmpeg", "-y", "-nostats", "-loglevel", "error",
+                      "-i", src, "-ss", f"{stime:.6f}", "-frames:v", str(chunk),
+                      "-vf", f"scale={scale_str}:flags=lanczos",
+                      "-qscale:v", "2", os.path.join(input_dir, "f_%08d.jpg")])
+        return {
+            "chunk_n": chunk_n,
+            "start_idx": start_idx,
+            "stime": stime,
+            "dir": input_dir,
+            "count": count_files(input_dir),
+            "elapsed": time.monotonic() - t_stage,
+            "returncode": result.returncode,
+        }
+
+    with open(seglist, "w", encoding="utf-8") as sl, ThreadPoolExecutor(max_workers=1) as prefetch:
+        current = extract_chunk(0, 1, input_dirs[0])
+        while current["count"]:
+            chunk_n = current["chunk_n"]
+            cnt = current["count"]
+            indir = current["dir"]
+            if current["returncode"] != 0:
+                log(f"  [错误] 分块 {chunk_n} 抽帧失败 (exit {current['returncode']})")
+                return False
+            extract_s += current["elapsed"]
             total_in += cnt
-            log(f"  [{chunk_n}/{n_chunks or '?'}] 抽帧 {cnt} @{stime:.3f}s")
+            log(f"  [{chunk_n}/{n_chunks or '?'}] 抽帧 {cnt} @{current['stime']:.3f}s")
+
+            # 当前块开始处理后，后台抽取下一块；只保留下一块输入帧，峰值仍低于 1.5GB。
+            next_dir = input_dirs[chunk_n % 2]
+            next_future = prefetch.submit(extract_chunk, current["start_idx"] + cnt,
+                                          chunk_n + 1, next_dir)
 
             # ESRGAN 2x
             os.makedirs(updir, exist_ok=True)
@@ -333,7 +352,7 @@ def process_one(src, out, index, total, chunk):
             tgt = int(round(upcnt * TARGET_FACTOR))
             t_stage = time.monotonic()
             r = run([RIFE, "-i", updir, "-o", rifedir, "-m", RIFE_MODEL,
-                     "-n", str(tgt), "-f", "f_%08d.jpg"])
+                     "-n", str(tgt), "-j", "5:8:5", "-f", "f_%08d.jpg"])
             rife_s += time.monotonic() - t_stage
             rcnt = count_files(rifedir)
             if r.returncode != 0 or rcnt == 0:
@@ -359,8 +378,9 @@ def process_one(src, out, index, total, chunk):
             sl.flush()
             segs.append(seg)
             log(f"  [{chunk_n}/{n_chunks or '?'}] seg {cnt}->{rcnt} 帧，编码完成")
-            start_idx += cnt
-            chunk_n += 1
+
+            # 当前块完全释放后才接管下一块，避免两块输出同时占用磁盘。
+            current = next_future.result()
 
     if not segs:
         log("  [错误] 没有抽到任何帧")
@@ -449,7 +469,7 @@ def process_one_full(src, out, scale_str, new_fps_num, fd, src_dur):
     tgt = int(round(upcnt * TARGET_FACTOR))
     t_stage = time.monotonic()
     r = run([RIFE, "-i", updir, "-o", rifedir, "-m", RIFE_MODEL,
-             "-n", str(tgt), "-f", "f_%08d.jpg"])
+             "-n", str(tgt), "-j", "5:8:5", "-f", "f_%08d.jpg"])
     rife_s = time.monotonic() - t_stage
     rcnt = count_files(rifedir)
     if r.returncode != 0 or rcnt == 0:

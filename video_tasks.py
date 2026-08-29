@@ -565,7 +565,7 @@ def run_interp(job, work):
         expected = cnt * 2
         r.log(f"  插值 {cnt} 帧 -> {expected} 帧")
         watch_process(job, [RIFE_EXE, "-i", indir, "-o", outdir, "-m", RIFE_MODEL,
-                            "-f", "f_%08d.jpg"],
+                            "-j", "5:8:5", "-f", "f_%08d.jpg"],
                       outdir, expected, m, base, span, "插值", r)
         return expected
 
@@ -600,7 +600,7 @@ def run_interp120(job, work):
         expected = cnt * 2
         r.log(f"  插值 {cnt} 帧 -> {expected} 帧")
         watch_process(job, [RIFE_EXE, "-i", indir, "-o", outdir, "-m", RIFE_MODEL,
-                            "-f", "f_%08d.jpg"],
+                            "-j", "5:8:5", "-f", "f_%08d.jpg"],
                       outdir, expected, m, base, span, "插值", r)
         return expected
 

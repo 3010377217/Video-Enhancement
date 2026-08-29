@@ -86,7 +86,7 @@ echo     chunk %CHUNK_N%: %CNT% frames @ %STIME%s
 
 rem interpolate this chunk (2x frame count)
 mkdir "%WORK%\out" 2>nul
-"%RIFE%" -i "%WORK%\in" -o "%WORK%\out" -m "%RIFEMODEL%" -f "%%08d.%FMT%"
+"%RIFE%" -i "%WORK%\in" -o "%WORK%\out" -m "%RIFEMODEL%" -j 5:8:5 -f "%%08d.%FMT%"
 if errorlevel 1 goto :fail
 
 rem encode this chunk into a segment at 2x fps
