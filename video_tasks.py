@@ -595,7 +595,7 @@ def _probe_fps(src, rep):
 
 
 def run_video2x(job, work):
-    """Run Video2X directly on the source video using its Real-CUGAN processor."""
+    """Run Video2X with selectable processor (realesrgan or realcugan)."""
     src, opts, rep = job.src, job.opts, job.rep
     exe = find_video2x_exe()
     if not exe:
@@ -606,27 +606,49 @@ def run_video2x(job, work):
     scale = int(opts.get("scale", 2))
     if scale not in (2, 3, 4):
         raise RuntimeError("Video2X 超分倍率只能是 2、3 或 4")
-    cugan_model = opts.get("realcugan_model", "models-se")
-    try:
-        noise_level = int(opts.get("noise_level", 0))
-    except (TypeError, ValueError):
-        raise RuntimeError("Real-CUGAN 降噪等级必须是 0 到 3 的整数")
-    try:
-        validate_realcugan_config(cugan_model, scale, noise_level)
-    except ValueError as e:
-        raise RuntimeError(str(e))
+
+    # 选择处理器: realesrgan 或 realcugan
+    processor = opts.get("video2x_processor", "realcugan")
     crf = int(opts.get("crf", 18))
     p = _probe_fps(src, rep)
     meter = ProgressMeter(rep, p["frames"])
-    noise_tag = "m1" if noise_level < 0 else str(noise_level)
-    outfile = _out_path(src, f"_x{scale}_cugan_n{noise_tag}")
-    rep.stage(f"Video2X / Real-CUGAN x{scale} · 降噪 {noise_level}")
-    cmd = [
-        exe, "-i", src, "-o", outfile,
-        "-p", "realcugan", "-s", str(scale), f"--noise-level={noise_level}",
-        "--realcugan-model", cugan_model,
-        "-c", "libx264", "-e", f"crf={crf}",
-    ]
+
+    if processor == "realesrgan":
+        # 使用 RealESRGAN 处理器
+        model = opts.get("realesrgan_model", "realesr-animevideov3")
+        if model not in ["realesr-animevideov3", "realesrgan-plus-anime", "realesrgan-plus"]:
+            raise RuntimeError(f"未知 RealESRGAN 模型: {model}")
+        outfile = _out_path(src, f"_x{scale}_{model}")
+        rep.stage(f"Video2X / RealESRGAN x{scale} · {model}")
+        cmd = [
+            exe, "-i", src, "-o", outfile,
+            "-p", "realesrgan", "-s", str(scale),
+            "--realesrgan-model", model,
+            "-c", "libx264", "-e", f"crf={crf}",
+        ]
+    elif processor == "realcugan":
+        # 使用 RealCUGAN 处理器（原有逻辑）
+        cugan_model = opts.get("realcugan_model", "models-se")
+        try:
+            noise_level = int(opts.get("noise_level", 0))
+        except (TypeError, ValueError):
+            raise RuntimeError("Real-CUGAN 降噪等级必须是 0 到 3 的整数")
+        try:
+            validate_realcugan_config(cugan_model, scale, noise_level)
+        except ValueError as e:
+            raise RuntimeError(str(e))
+        noise_tag = "m1" if noise_level < 0 else str(noise_level)
+        outfile = _out_path(src, f"_x{scale}_cugan_n{noise_tag}")
+        rep.stage(f"Video2X / Real-CUGAN x{scale} · 降噪 {noise_level}")
+        cmd = [
+            exe, "-i", src, "-o", outfile,
+            "-p", "realcugan", "-s", str(scale), f"--noise-level={noise_level}",
+            "--realcugan-model", cugan_model,
+            "-c", "libx264", "-e", f"crf={crf}",
+        ]
+    else:
+        raise RuntimeError(f"未知处理器: {processor}，只支持 realesrgan 或 realcugan")
+
     rep.log("执行 Video2X: " + subprocess.list2cmdline(cmd))
 
     percent_re = re.compile(r"(\d+(?:\.\d+)?)\s*%")

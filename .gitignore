@@ -7,6 +7,7 @@ _job_*.log
 _interp120_*
 _web_work/
 _cugan_keep_*/
+_test_*/
 
 # chunked job temp files
 _seg_*.mp4
@@ -15,6 +16,36 @@ _fps.txt
 _t.txt
 _audio_*.m4a
 _concat_*.mp4
+
+# test and temp files
+test_*.py
+_*.py
+_*.txt
+_*.png
+*.log
+upscale_speed.json
+interp_*.py
+interp_*.bat
+frame_match_probe.py
+
+# numeric temp files
+[0-9][0-9][0-9][0-9]
+[0-9][0-9][0-9]
+
+# test folders and outputs
+.test-*/
+.codex-*/
+2935/
+2973/
+3000/
+
+# video files
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.flv
+*.webm
 
 # redundant portable zip (already extracted to exe + models)
 *.zip
