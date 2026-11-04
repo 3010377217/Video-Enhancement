@@ -1,64 +1,36 @@
-# running-job temp dirs & logs
+# Dependencies and generated desktop builds
+frontend/node_modules/
+frontend/.cache/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+desktop-release/
+
+# Local tool installations, processing caches and test artifacts
+tools/
+python/
 __pycache__/
-_work_*/
-_rife_work_*/
-_upscaled_*/
-_job_*.log
-_interp120_*
-_web_work/
-_cugan_keep_*/
-_test_*/
-
-# chunked job temp files
-_seg_*.mp4
-_segs_*.txt
-_fps.txt
-_t.txt
-_audio_*.m4a
-_concat_*.mp4
-
-# test and temp files
-test_*.py
-_*.py
-_*.txt
-_*.png
+*.py[cod]
+output/
+.playwright-cli/
+frontend/.playwright-cli/
 *.log
-upscale_speed.json
-interp_*.py
-interp_*.bat
-frame_match_probe.py
+*.bak
+*.tmp
 
-# numeric temp files
-[0-9][0-9][0-9][0-9]
-[0-9][0-9][0-9]
+# Local configuration
+.env
+.env.*
+!.env.example
 
-# test folders and outputs
-.test-*/
-.codex-*/
-2935/
-2973/
-3000/
-
-# video files
+# User media (the tracked project sample remains in Git)
 *.mp4
 *.mkv
 *.avi
 *.mov
 *.flv
 *.webm
-
-# redundant portable zip (already extracted to exe + models)
 *.zip
 
-# rife interpolation tool - track only the exe + v4.6 model (~19MB);
-# the other bundled models are unused and stay local
+# Optional RIFE models are not used by the desktop runtime
 rife-ncnn-vulkan-20221029-windows/rife*/
 !rife-ncnn-vulkan-20221029-windows/rife-v4.6/
-
-# optional Video2X Windows package (install locally, do not commit its binaries)
-video2x/
-Video2X/
-
-# generated test outputs
-test_output.png
-onepiece_demo_x2.mp4

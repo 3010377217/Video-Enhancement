@@ -1,106 +1,65 @@
-# 视频增强工具箱（Real-ESRGAN / Video2X / RIFE）
+# 帧序 · 本地视频增强工作台
 
-基于 [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) 官方 NCNN Vulkan 便携版，封装了一个 ffmpeg 批处理脚本，把"抽帧 → 超分 → 合帧（保留音频）"串成一条命令。
+Windows x64 桌面程序，使用 Electron 独立窗口运行。视频、模型推理和编码都在本机完成，无需浏览器或开发服务器。
 
-## 环境要求
+## 启动
 
-- Windows 10/11
-- 支持 Vulkan 的 NVIDIA 显卡（NCNN Vulkan 版不走 CUDA）
-- `ffmpeg` / `ffprobe` 在 PATH 中（[gyan.dev full build](https://www.gyan.dev/ffmpeg/builds/) 或 `winget install ffmpeg`）
+双击根目录的 `启动帧序.cmd`，或运行 `desktop-release/FrameSequence-0.2.0-Windows.exe`。便携版已经包含 Python、FFmpeg/FFprobe、Real-ESRGAN、RIFE 和模型，使用时无需另装 Node.js、Python 或 FFmpeg。
 
-## 用法
+也可运行 `desktop-release/win-unpacked/FrameSequence.exe`，必须保留整个 `win-unpacked` 目录。单文件便携版会先解压运行时，首次启动需要等待，并需要临时磁盘空间。AI 推理需要支持 Vulkan 的显卡及正常驱动；普通转换可使用 CPU 编码。当前构建未签名。
 
-```
-upscale_video.bat <视频路径> [放大倍数]
-```
+## 使用
 
-- `scale` 省略时默认 `2`
-- 示例：`upscale_video.bat "D:\videos\anime.mp4" 2`
-- 输出：`D:\videos\anime_x2.mp4`（源视频同目录，追加 `_x2` 后缀）
+1. 点击「添加视频」、按 Ctrl+O，或把多个视频拖到列表。
+2. 在右侧统一配置；每行的配置按钮可设置该视频的独立参数。
+3. 选择输出目录，点击「开始处理」，队列按顺序逐项运行。
+4. 完成后通过行内按钮打开输出位置；失败、取消或中断的任务可以重试。
 
-## 工作原理（分块处理）
+支持普通缩放、Real-ESRGAN 动漫画质增强、RIFE 提帧，输出 H.264/H.265 MP4。支持保持原始、720p、1080p、2K、4K 和自定义偶数尺寸，支持原始帧率或 24/30/60/120 fps。保持比例时，预设尺寸是容纳画面的范围，竖屏会交换预设方向；例如 4:3 素材选择 720p，实际输出为 960×720。
 
-整段视频拆帧后可达几十 GB，所以脚本把视频**分批**处理，磁盘上始终只保留一批的帧：
+## 两组独立设置
 
-1. 抽取一批（默认 1500 帧）
-2. 这批做超分
-3. 编码成一个小分片 mp4
-4. 删除这批的原始帧和超分帧，继续下一批
+**处理策略**只影响 AI 画面处理：速度优先先缩半再 2×超分；质量优先从原始帧超分，再匹配目标尺寸。普通缩放无需选择该策略。AI 使用现有动漫模型，不保证所有实拍素材都获得主观画质提升。
 
-全部完成后用 ffmpeg concat 合并分片，再混入源音频。峰值磁盘占用约 1GB 以内，与视频总长度无关。若磁盘紧张，可把 `upscale_video.bat` 里的 `CHUNK` 调小（如 `1000`）。
+**输出控制**决定最终压缩：
 
-## 说明
+- 固定码率：填写视频 Mbps，平均值允许波动，音频和封装另占体积；分辨率建议范围仅供参考。
+- 动态码率：填写质量目标，建议 18～28，可从 23 开始；数值越小通常画质越高、文件越大。硬件使用 CQ，软件使用 CRF，不同编码器的相同数字不代表相同效果。
+- 体积限制：填写每分钟最多 MB。按“总时长 ÷ 60 × MB × 1,000,000”限制整个文件，包含音频和封装。此模式使用软件编码，最多尝试三次最终压缩；预算不足或最终超限会明确失败。
 
-- 默认模型：`realesr-animevideov3`（动漫专用，支持 x2 / x3 / x4），适合动漫；真人视频请改用 `realesrgan-x4plus`
-- 帧率保持不变（只超分、不补帧）
-- 临时文件 `_work_*` / `_seg_*.mp4` / `_segs_*.txt` 处理完自动删除
-- 时间参考（854x480 源，NVIDIA T1200，CHUNK=1500）：约 0.2 秒/帧，27 分钟视频约 3 小时
+处理策略不会修改上述输出参数，也不直接决定文件体积。
 
-## 两种 AI 超分引擎
+## 队列和文件
 
-Web 界面的“超分”页现在可以选择两条路线：
+「暂停后续」在当前任务完成后暂停；「取消当前」取消当前任务并继续后续；「停止队列」停止当前与待处理任务。已提交的任务保存配置快照，后续修改不会影响它们。重启后保留视频、设置和完成记录，未完成任务标为中断，可重试，暂不支持推理断点续算。
 
-- **Real-ESRGAN**：项目自带 `realesrgan-ncnn-vulkan.exe` 和动漫模型，继续使用上面的分块抽帧流程。
-- **Video2X / Real-CUGAN**：Video2X 直接读取视频并输出视频，推荐 `2x` 并从 Real-CUGAN 降噪等级 `0` 或 `1` 开始测试。输出文件名会追加 `_cugan_n0`、`_cugan_n1` 等后缀，便于和 Real-ESRGAN 结果做对比。
+默认不覆盖源视频。同名输出可自动编号或跳过；正式成片在完整解码和参数检查后发布。任务记录位于 `%APPDATA%/帧序/queue-v1.json`，AI 缓存位于 `%TEMP%/framesequence/<任务 ID>`。AI 使用 PNG 分块和 FFV1 无损中间视频，长视频缓存仍会随时长累积，请预留磁盘空间。
 
-Video2X 是可选的外部运行时，未随仓库提交。配置方式任选其一：
+## 当前支持边界
 
-1. 将兼容当前 Video2X CLI 的 Windows 包解压到项目目录 `video2x\\`，确保其中有 `video2x.exe`。
-2. 设置环境变量 `VIDEO2X_EXE`，值为 `video2x.exe` 的完整路径。
+- 第一版面向 Windows 10/11 x64。NVENC 通过短帧实测后启用，不可用时尝试对应的软件编码器，实际编码器显示在任务行内。
+- 第一条音轨转为 AAC 192 kbps，也可关闭音频。暂不保留字幕流、其他音轨、章节与附件。
+- 变帧率视频转为恒定帧率；当前暂不处理 HDR、高于 8 位的画面和非方形像素视频，会在提交时提示原因。
+- 当前实测机器为 NVIDIA T1200 Laptop 4GB，已验证短片处理。尚未完成 RTX 4060、其他全新电脑、长视频耐久与长视频缓存峰值测试。
 
-启动 `webui.bat` 后，超分引擎状态会显示在选择项中。未配置 Video2X 时，Real-ESRGAN 仍可正常使用；选择 Video2X 会给出配置提示。
+节点方案见 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)，逐节点结果见 [ACCEPTANCE.md](ACCEPTANCE.md)。开发、构建与自动验收命令见 [frontend/README.md](frontend/README.md)。第三方许可证随包放在 `resources/runtime/licenses`，Electron 许可证在程序目录内。
 
-Video2X 模式不会使用 `CHUNK` 参数，因为视频解码、处理和编码由 Video2X 自己完成；Real-ESRGAN 模式仍按分块流程运行。
+## 从源码运行与仓库结构
 
-### 2x 超分后缩回原分辨率
+仓库保留当前桌面版源代码、必要模型与 GPU 工具。旧网页、旧命令行脚本、过时说明和未使用模型已清理，历史版本可从 Git 提交记录恢复。依赖、运行时缓存、测试成片与打包产物不进入 Git。
 
-`upscale_keep_size_video2x.bat` 用于“文件标称分辨率较高、实际观感偏糊”的片源：先由 Real-CUGAN 放大 2 倍，再以 Lanczos 缩回源视频的原始宽高。它保持帧率、复制全部音轨，输出文件名追加 `_cugan2x_keep_<宽>x<高>`。
+开发环境安装 Node.js、Python 3.13 和 FFmpeg/FFprobe，并确保 Python、FFmpeg/FFprobe 在 PATH 中，然后执行：
 
-```
-upscale_keep_size_video2x.bat "D:\videos\anime.mp4"
-upscale_keep_size_video2x.bat "D:\videos\anime.mp4" 1
+```powershell
+cd frontend
+npm ci
+npm start
 ```
 
-- 默认：`models-se + 2x + noise 0`。
-- 第二个参数为降噪等级：`0`、`1`、`2`、`3`。
-- 脚本会产生一个临时的 2 倍分辨率视频；建议预留至少相当于最终输出文件大小的额外空间。脚本会读取源视频帧数；如果 Video2X 输出少了尾部帧，会自动复制最后一帧补齐，不会把帧率写死为 24fps。处理失败时该临时文件会保留，方便查看错误日志。
+- `frontend/src/`：桌面界面与导出配置。
+- `frontend/desktop/`：Electron 窗口、文件访问、队列、打包与验收脚本。
+- `processing/`：实际视频处理、AI 超分与补帧、输出编码。
+- `models/`：当前使用的 Real-ESRGAN animevideov3 2×/3×/4×模型。
+- `rife-ncnn-vulkan-20221029-windows/`：RIFE 工具与 v4.6 模型。
 
----
-
-# RIFE 帧率插值（动漫补帧）
-
-基于 [RIFE](https://github.com/hzwer/arXiv2020-RIFE) 的 ncnn-vulkan 便携版，把低帧率动画（如 30fps）插值成 60fps 的流畅观感，一次跑出 60hz 和 45hz 两个版本。
-
-## 环境要求
-
-- 除上述环境外，需要 `rife-ncnn-vulkan-20221029-windows/`（含 `rife-v4.6` 模型）解压到脚本同目录。
-  该目录较大且不进 git，请从 [releases](https://github.com/nihui/rife-ncnn-vulkan/releases) 下载对应版本解压。
-
-## 用法
-
-```
-interp_video.bat <视频路径>
-```
-
-- 示例：`interp_video.bat "D:\videos\anime.mp4"`
-- 输出（源视频同目录）：
-  - `<视频名>_60hz.mp4` —— 2x 插值后的完整 60fps
-  - `<视频名>_45hz.mp4` —— 从 60fps 每 4 帧取 3 帧派生（保留原帧 + 一半插值帧）
-
-## 工作原理（分块 + 磁盘优化）
-
-与超分脚本相同的分块思路，峰值磁盘占用约数百 MB，与视频总长度无关（笔记本剩余空间不多也没问题）：
-
-1. 抽取一批（默认 1000 帧）
-2. 该批做 RIFE 2x 插值
-3. 编码成小分片 mp4，立即删除本批帧
-4. 继续下一批，最后 concat 合并 + 混入音频
-
-分块边界会跳过一次插值（每块约一帧的轻微定格，CHUNK=1000 时每约 33 秒一次，几乎无感）。磁盘紧张可把 `interp_video.bat` 里的 `CHUNK` 调小（如 `300`）。
-
-## 说明
-
-- 模型写死为 `rife-v4.6`；插值用 GPU（Vulkan），不占 CPU 太多
-- 60hz 版 CRF 18 编码；45hz 版从 60hz 重编码派生
-- 输入需为恒定帧率（CFR）；VFR 源不精确
-- 时间参考（1708x960，NVIDIA T1200）：RIFE 约 24 帧/秒，27 分钟视频插值阶段约 10 分钟（不含抽帧/编码）
+打包命令及逐节点验收方式见 [frontend/README.md](frontend/README.md)。
