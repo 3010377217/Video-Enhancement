@@ -21,7 +21,7 @@ npm run desktop:pack
 npm run desktop:portable
 ```
 
-均先构建界面，再准备 `.cache/runtime` 并调用 electron-builder。前者生成 `../desktop-release/win-unpacked`，后者生成 `../desktop-release/FrameSequence-0.2.0-Windows.exe`。已准备的目录版也可执行 `npx electron-builder --win portable --x64 --prepackaged ../desktop-release/win-unpacked`，直接封装同一产物。
+均先构建界面，再准备 `.cache/runtime` 并调用 electron-builder。前者生成 `../desktop-release/win-unpacked`，后者生成 `../desktop-release/FrameSequence-<版本号>-Windows.exe`，版本号取自 `package.json`。已准备的目录版也可执行 `npx electron-builder --win portable --x64 --prepackaged ../desktop-release/win-unpacked`，直接封装同一产物。
 
 `desktop/prepare-runtime.cjs` 收集本机 Python 标准库、所需 DLL、FFmpeg/FFprobe、GPU 可执行程序与模型；不包含第三方 Python 包。打包机需具备上述工具。第三方许可证来自本地保留文件，生成运行时无需联网获取许可证。发布时保留随包许可证。
 
@@ -35,6 +35,9 @@ node desktop/accept-node4.cjs
 node desktop/accept-node5.cjs
 node desktop/accept-node6.cjs ../desktop-release/win-unpacked/FrameSequence.exe
 node desktop/accept-portable.cjs
+node desktop/accept-optimization.cjs
+node desktop/accept-task-controls.cjs
+node desktop/accept-task-queue.cjs
 ```
 
 按节点顺序运行；部分后续节点复用前面生成的短片。第 6 节点可独立生成测试素材。验收会实际执行视频处理，输出到 `../output/acceptance/nodeN`；运行期间不要手动操作测试窗口。`desktop/smoke.cjs` 是第 6 节点综合验收的兼容入口，不再检查虚构演示任务。
@@ -48,7 +51,14 @@ node desktop/accept-portable.cjs
 - `desktop/queue.cjs` / `jobs.cjs`：顺序队列、任务快照、持久化与取消。
 - `../processing/worker.py` / `ai.py` / `encoding.py`：实际处理、AI 管线与三种压缩控制。
 - `../processing/winprocess.py`：Windows Job Object，主进程异常退出时清理后代进程。
+- `../processing/runner.py` / `control.py`：保留独立生命周期守护，暂停/继续该任务的工作进程及其模型、编码子进程，避免暂停时失去退出监控。
 
 具体产品行为与限制见根目录 README 和 ACCEPTANCE.md。
 
 便携版的 NSIS 启动器不会转发 Playwright 需要的 inspector 标准输出，使用 `accept-portable.cjs` 验收：先直接启动单文件 EXE 并确认其原生窗口，再保留该实例，对它实际解压的可执行程序运行完整第 6 节点测试。两个实例使用独立配置，测试结束正常关闭启动器实例。
+
+优化回归另包含 `python -X utf8 -m unittest discover -s processing -p test_planning.py`（在根目录执行）。`accept-optimization.cjs` 实际验证 720p→1080p/4K、模型中间尺寸、降帧先丢帧、多次超分、AAC 码流和 RGB 像素哈希；可传入打包后的 runtime 目录验证同一套处理代码。每次打包先清理受控 runtime 缓存，只收集使用的六个 SR 模型文件，Electron 仅保留中文和英文语言资源。
+
+`accept-task-controls.cjs` 验证实际行内进度、当前任务暂停/继续、冻结期间进程 CPU 时间不增长、沿用同一工作进程、等待/运行/暂停项删除、队列继续、临时文件清理，以及暂停时应用异常退出后的进程回收和重启标记。可传目录版 EXE；截图与报告位于 `output/playwright/task-controls`。
+
+便携包专项可执行 `node desktop/accept-portable.cjs --task-controls`，在同一便携包解压运行时上依次完成第 6 节点与任务控制验收。

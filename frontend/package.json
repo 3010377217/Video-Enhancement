@@ -1,7 +1,7 @@
 {
   "name": "frame-sequence",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.4",
   "type": "module",
   "description": "帧序本地视频增强工作台",
   "main": "desktop/main.cjs",
@@ -38,6 +38,10 @@
     "productName": "帧序",
     "asar": true,
     "compression": "normal",
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
     "electronDist": "node_modules/electron/dist",
     "directories": {
       "output": "../desktop-release"
@@ -53,7 +57,12 @@
       "desktop/icon.png",
       "package.json"
     ],
-    "extraResources": [{ "from": ".cache/runtime", "to": "runtime" }],
+    "extraResources": [
+      {
+        "from": ".cache/runtime",
+        "to": "runtime"
+      }
+    ],
     "win": {
       "target": [
         {

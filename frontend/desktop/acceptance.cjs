@@ -39,7 +39,7 @@ async function main() {
     assert.ok(await page.getByRole('button', { name: '开始处理', exact: true }).isDisabled());
     await app.evaluate(({ dialog }, paths) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: paths }); }, [mp4, broken]);
     await page.getByRole('button', { name: '添加视频', exact: true }).click();
-    await page.getByRole('button', { name: `配置 ${path.basename(mp4)}`, exact: true }).waitFor();
+    await page.locator('tbody tr').waitFor();
     assert.equal(await page.locator('tbody tr').count(), 1);
     assert.match(await page.locator('.import-errors').innerText(), /损坏/);
     await page.keyboard.press('Control+o');

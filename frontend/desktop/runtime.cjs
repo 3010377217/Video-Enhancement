@@ -5,6 +5,7 @@ const { spawn } = require('node:child_process');
 function command(executable, args, { timeout = 20000, cwd, signal } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, args, { cwd, windowsHide: true, shell: false, signal });
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
     let stdout = '', stderr = '', timedOut = false;
     const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeout);
     child.stdout.on('data', data => { stdout = (stdout + data).slice(-4_000_000); });
@@ -54,8 +55,9 @@ async function inspectEnvironment(runtime) {
     } catch (error) { return { name, ok: false, detail: error.message.slice(-400) }; }
   }));
   const models = await Promise.all([
-    ['Real-ESRGAN', runtime.sr], ['SR 模型', path.join(runtime.srModels, 'realesr-animevideov3-x2.bin')],
-    ['RIFE', runtime.rife], ['RIFE 模型', path.join(runtime.rifeModel, 'flownet.bin')],
+    ['Real-ESRGAN', runtime.sr],
+    ...[2, 3, 4].flatMap(scale => ['bin', 'param'].map(ext => [`SR ${scale}× ${ext}`, path.join(runtime.srModels, `realesr-animevideov3-x${scale}.${ext}`)])),
+    ['RIFE', runtime.rife], ...['bin', 'param'].map(ext => [`RIFE ${ext}`, path.join(runtime.rifeModel, `flownet.${ext}`)]),
   ].map(async ([name, file]) => ({ name, ok: await exists(file), detail: file })));
   let gpu = '未取得 GPU 信息，AI 可用性将在实际模型测试中验证';
   try { gpu = (await command('nvidia-smi', ['--query-gpu=name,memory.total', '--format=csv,noheader'])).stdout.trim(); } catch { /* Vulkan GPUs need not be NVIDIA. */ }

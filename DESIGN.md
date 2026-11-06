@@ -1,21 +1,29 @@
 # 帧序 Design
 
+## Vendor Perspective
+Design and build as a software vendor shipping to many users, not for this development machine. Do not tie defaults, limits, or behavior to the local hardware or environment. Options must suit varied GPUs, VRAM, disks, and Windows setups; safe automatic defaults come first, and advanced values stay user-adjustable and validated.
+
 ## Scene
-A Windows user reviews anime footage in a desktop editor in subdued ambient light. A dark, cool-gray interface reduces surrounding luminance and keeps the video queue and export configuration visually primary, following the requested Jianying reference.
+A Windows user queues local anime footage in a desktop editor in subdued light. A near-black interface with one cyan accent (reference: Jianying) keeps the queue and export settings primary.
 
 ## Color
-Restrained cool neutrals and one mint accent. CSS tokens use OKLCH. Background approximately #14171b; panels #1b1e23; raised controls #272b31; accent approximately #6cddd2. Accent is reserved for primary actions, selected choices, and small state indicators.
+Flat, no gradients, no shadows. Background #111113, panel #1a1a1d, controls #26262a (hover #2f2f34), separators #2a2a2f. Text #f2f2f3, secondary #a0a0a8, tertiary #74747c. Accent #00d6e0 is used only for the primary button, selected options, progress, and active status. Danger #ff6b6b, success #4cd9a0.
 
 ## Type
-Segoe UI Variable / Segoe UI and Microsoft YaHei UI, system sans fallback. UI text 12–14px, section titles 15–18px, numeric data tabular. No display typography.
+Segoe UI Variable / Segoe UI / Microsoft YaHei UI. 12–13px for UI text, 15px for panel titles. Numeric data uses tabular figures.
 
 ## Layout
-56px application header, two-column workspace with a flexible video queue and a 326px export inspector, plus a persistent bottom action bar. Main padding 24px, 20px inter-panel gap. The queue uses the available workspace height while video rows retain compact content-driven sizing. At narrow widths, inspector follows the queue. No footage preview panel, decorative card grid, or left navigation rail.
+44px header (logo and name only). Two columns: flexible video queue, 320px export settings panel. The start button is pinned to the bottom of the settings panel; there is no footer bar, stepper, help dialog, or navigation.
+
+Queue: table with four columns (name, resolution, size, actions). Row actions: remove always; pause/resume while processing; open output and retry when finished. Status text and a thin progress bar appear under the name only while a task has state. Empty queue: one dashed drop area with a select button. Queue-level controls (pause after current, cancel current, stop queue) appear in the queue header only while tasks run.
+
+Settings, top to bottom: processing strategy (speed / quality / custom; custom exposes Real-ESRGAN tile, thread count `-j` load:proc:save, frames per chunk, and intermediate quality; every option defaults to auto), output resolution and frame rate, encoding (H.264 / H.265), output method (dynamic / fixed) with its value input, output directory.
 
 ## Components
-Video table with four business columns and bulk-select checkboxes. Compact text/icon buttons, 6px control radii, 8px panel radii, 1px separators, no large shadows. Native selects retain keyboard behavior. Long text truncates with full titles available. Use Radix SVG icons, never emoji or typographic icon substitutes.
+6px control radii, 10px for drop areas. Segmented controls for two-option choices, native selects for lists. Inline validation under the field. Long text truncates with the full value in the title attribute. Radix SVG icons only.
 
-Processing strategy is a content-sized two-option segmented control in picture settings, with copy describing processing time and detail retention. Output control is an independent fieldset in encoding settings with three compact native radio choices and only the active numeric input. Never hide output methods behind a custom strategy or infer file size from processing speed. Number inputs are 84–96px wide with explicit units, visible range guidance, and inline validation. Settings scroll independently while the bottom action remains visible. Submitted tasks freeze their effective configuration; later edits apply to future submissions.
+## Fixed defaults (not exposed)
+AI enhancement, keep audio, keep aspect ratio, output name suffix `_增强`, numbered names on collision, saved to the chosen directory. Older saved settings are normalized on load; per-video overrides are no longer used.
 
 ## Motion
-No automatic or decorative animation. 150ms color feedback for hover/focus, opacity for notifications. Respect prefers-reduced-motion. Processing visuals use actual worker stages and progress. Pause means finishing the current task before starting the next.
+No decorative animation. 150ms color transitions. Respect prefers-reduced-motion. Progress reflects actual worker stages. Pause means finishing the current task before starting the next.

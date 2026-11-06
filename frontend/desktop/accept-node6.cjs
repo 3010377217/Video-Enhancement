@@ -68,32 +68,28 @@ async function main() {
     await page.getByRole('button', { name: '选择输出目录' }).click();
     await until(async () => await page.getByRole('textbox', { name: '输出目录路径', exact: true }).inputValue() === directory);
     await page.getByRole('button', { name: 'H.265', exact: true }).click();
-    await page.getByRole('textbox', { name: '输出文件名后缀' }).fill('_正式导出');
-    await page.getByRole('button', { name: `配置 ${path.basename(input)}`, exact: true }).click();
-    await page.getByRole('button', { name: 'AI 画质增强', exact: true }).click();
     await page.getByRole('button', { name: '速度优先', exact: true }).click();
     await page.getByRole('combobox', { name: '目标帧率', exact: true }).selectOption('60');
-    await page.getByRole('combobox', { name: '配置应用范围' }).selectOption('all');
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 740));
     const queueStarted = Date.now();
     await page.getByRole('button', { name: '开始处理', exact: true }).click();
     await page.getByRole('button', { name: '暂停后续', exact: true }).waitFor();
     await page.screenshot({ path: path.join(directory, 'minimum-processing.png') });
     const bounds = await page.evaluate(() => {
-      const footer = document.querySelector('.action-bar');
+      const footer = document.querySelector('.settings-foot');
       return { width: innerWidth, scroll: document.documentElement.scrollWidth, footerWidth: footer.clientWidth, footerScroll: footer.scrollWidth };
     });
     assert.ok(bounds.scroll <= bounds.width + 1, JSON.stringify(bounds));
     assert.ok(bounds.footerScroll <= bounds.footerWidth + 1, JSON.stringify(bounds));
     await until(async () => {
       snapshot = await page.evaluate(() => window.desktop.snapshot());
-      const bytes = (await Promise.all(snapshot.tasks.map(task => bytesIn(path.join(os.tmpdir(), 'framesequence', task.id))))).reduce((a, b) => a + b, 0);
+      const bytes = (await Promise.all(snapshot.tasks.map(task => Promise.all([root, path.dirname(executablePath), os.tmpdir()].map(base => bytesIn(path.join(base, 'framesequence', task.id)))).then(sizes => sizes.reduce((a, b) => a + b, 0))))).reduce((a, b) => a + b, 0);
       sampledCacheBytes = Math.max(sampledCacheBytes, bytes);
       return snapshot.tasks.length === 2 && snapshot.tasks.every(task => ['completed', 'failed'].includes(task.status));
     });
     queueMilliseconds = Date.now() - queueStarted;
     assert.ok(snapshot.tasks.every(task => task.status === 'completed'), JSON.stringify(snapshot));
-    checks.push('native picker import and directory, malformed/duplicate handling, per-item overrides, sequential AI+RIFE and HEVC export');
+    checks.push('native picker import and directory, malformed/duplicate handling, global settings, sequential AI+RIFE and HEVC export');
     const outputs = [];
     for (const task of snapshot.tasks) {
       const info = await probe(task.output, runtime); outputs.push(info);
@@ -111,7 +107,7 @@ async function main() {
     await until(async () => await page.locator('tbody tr').count() === 2);
     snapshot = await page.evaluate(() => window.desktop.snapshot());
     assert.ok(snapshot.tasks.every(task => task.status === 'completed')); assert.equal(snapshot.settings.global.codec, 'hevc');
-    assert.equal(Object.values(snapshot.settings.overrides)[0].fps, '60');
+    assert.equal(snapshot.settings.global.fps, '60');
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 940));
     await page.screenshot({ path: path.join(directory, 'desktop-completed.png') });
     checks.push('full decode, rotated portrait, no audio, output-location action, restart and settings persistence, minimum-window bounds');
@@ -123,16 +119,24 @@ async function main() {
     await until(async () => await page.locator('tbody tr').count() === 3);
     await page.getByRole('combobox', { name: '输出分辨率', exact: true }).selectOption('4k');
     await page.getByRole('button', { name: '开始处理', exact: true }).click();
+    let cancellationWork;
     await until(async () => {
       const task = (await page.evaluate(() => window.desktop.snapshot())).tasks.at(-1);
-      return (await fs.readdir(directory)).some(file => file.includes(`${task.id}.partial.mp4`));
+      // AI writes the final partial file only after all inference has finished.
+      // Cancel once real frame data exists instead of waiting for a full 4K clip.
+      cancellationWork = task.work;
+      return cancellationWork && await bytesIn(cancellationWork) > 0;
     });
     await page.getByRole('button', { name: '暂停后续', exact: true }).click();
     await page.getByRole('button', { name: '继续队列', exact: true }).waitFor();
     await page.getByRole('button', { name: '停止队列', exact: true }).click();
     await until(async () => (await page.evaluate(() => window.desktop.snapshot())).tasks.at(-1).status === 'cancelled');
     await until(async () => !(await fs.readdir(directory)).some(file => file.includes('.partial.')));
-    checks.push('pause and stop via actual UI, partial cleanup, unchanged source SHA256');
+    await until(async () => fs.stat(cancellationWork).then(() => false, error => {
+      if (error.code === 'ENOENT') return true;
+      throw error;
+    }));
+    checks.push('pause and stop real AI work via actual UI, cache cleanup, no partial output, unchanged source SHA256');
 
   // Additional media and error-path checks use precisely the packaged worker/runtime.
   const odd = path.join(directory, '奇数尺寸.mkv'), vfr = path.join(directory, '变帧率.mp4'), hdr = path.join(directory, 'HDR.mkv');

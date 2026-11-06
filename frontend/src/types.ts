@@ -3,10 +3,10 @@ export type Video = {
   id: string; path: string; name: string; bytes: number; width: number; height: number;
   codedWidth: number; codedHeight: number; rotation: number; duration: number;
   fps: number; fpsRational: string; codec: string; audio: boolean; hdr: boolean; bitDepth: number; sar: string;
-  vfr: boolean; audioTracks: number; subtitles: boolean;
+  vfr: boolean; audioTracks: number; subtitles: boolean; audioCodec?: string;
 };
 export interface Config extends OutputOptions {
-  processingStrategy: 'speed' | 'quality'; enhance: string; resolution: string; fps: string; codec: string;
+  processingStrategy: 'speed' | 'quality' | 'custom'; srTile: string; srThreads: string; cacheDir: string; chunkFrames: string; interQuality: string; enhance: string; resolution: string; fps: string; codec: string;
   audio: boolean; destination: string; directory: string; suffix: string;
   collision: string; keepRatio: boolean; width: string; height: string;
 }
@@ -33,6 +33,7 @@ declare global {
       defaultDirectory(): Promise<string>;
       start(id: string, config: Config): Promise<{ id: string }>;
       cancel(): Promise<void>;
+      pauseTask(id: string): Promise<void>; resumeTask(id: string): Promise<void>;
       showResult(id: string): Promise<void>;
       onJob(callback: (event: JobEvent) => void): () => void;
       snapshot(): Promise<QueueSnapshot>;

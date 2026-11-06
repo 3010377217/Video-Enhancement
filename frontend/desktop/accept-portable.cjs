@@ -10,7 +10,7 @@ const { command } = require('./runtime.cjs');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function main() {
   const root = path.resolve(__dirname, '..', '..');
-  const executable = path.resolve(process.argv[2] ?? path.join(root, 'desktop-release', 'FrameSequence-0.2.0-Windows.exe'));
+  const executable = path.resolve(process.argv.slice(2).find(value => !value.startsWith('--')) ?? path.join(root, 'desktop-release', `FrameSequence-${require('../package.json').version}-Windows.exe`));
   const anchor = await fs.mkdtemp(path.join(os.tmpdir(), 'frame-portable-launch-'));
   const environment = { ...process.env, PATH: path.join(process.env.SystemRoot, 'System32') };
   for (const key of ['ELECTRON_RUN_AS_NODE', 'FRAMESEQUENCE_DEV_URL', 'FRAMESEQUENCE_TEST_DATA', 'PYTHONHOME', 'PYTHONPATH']) delete environment[key];
@@ -39,6 +39,15 @@ async function main() {
     report.portableTestMethod = 'Direct portable launch with restricted PATH, native window verified, complete acceptance on its extracted executable with independent test profile';
     await fs.writeFile(reportPath, JSON.stringify(report, null, 2));
     await fs.writeFile(path.join(path.dirname(reportPath), 'portable-report.json'), JSON.stringify(report, null, 2));
+    if (process.argv.includes('--task-controls')) {
+      const controls = await command(process.execPath, [path.join(__dirname, 'accept-task-controls.cjs'), native.ExecutablePath], { timeout: 240000 });
+      const controlsDirectory = path.join(root, 'output', 'playwright', 'task-controls');
+      const controlsReport = JSON.parse(await fs.readFile(path.join(controlsDirectory, 'report.json'), 'utf8'));
+      controlsReport.portableArtifact = executable;
+      controlsReport.portableNativeWindowVerified = true;
+      await fs.writeFile(path.join(controlsDirectory, 'portable-report.json'), JSON.stringify(controlsReport, null, 2));
+      console.log(controls.stdout);
+    }
     console.log(result.stdout); console.log('Portable direct launch and extracted-runtime acceptance passed:', executable);
   } finally {
     if (native) await command(powershell, ['-NoProfile', '-Command', `(Get-Process -Id ${native.ProcessId} -ErrorAction SilentlyContinue).CloseMainWindow()`]).catch(() => {});

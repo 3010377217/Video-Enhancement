@@ -1,8 +1,9 @@
 @echo off
 setlocal
 set "APP_DIR=%~dp0desktop-release"
-if exist "%APP_DIR%\FrameSequence-0.2.0-Windows.exe" (
-  start "" /D "%APP_DIR%" "%APP_DIR%\FrameSequence-0.2.0-Windows.exe"
+rem Launch the highest-numbered portable build (sorted by file name, newest first).
+for /f "delims=" %%F in ('dir /b /o-n "%APP_DIR%\FrameSequence-*-Windows.exe" 2^>nul') do (
+  start "" /D "%APP_DIR%" "%APP_DIR%\%%F"
   exit /b 0
 )
 if exist "%APP_DIR%\win-unpacked\FrameSequence.exe" (

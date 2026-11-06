@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('desktop', {
   defaultDirectory: () => call('default-directory'),
   start: (id, config) => call('start', id, config),
   cancel: () => call('cancel'),
+  pauseTask: id => call('pause-task', id), resumeTask: id => call('resume-task', id),
   showResult: id => call('show-result', id),
   onJob: callback => { const listener = (_event, data) => callback(data); ipcRenderer.on('frame:job', listener); return () => ipcRenderer.removeListener('frame:job', listener); },
   snapshot: () => call('snapshot'), enqueue: items => call('enqueue', items),

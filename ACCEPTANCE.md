@@ -59,3 +59,51 @@
 上述验收记录反映功能交付时状态。随后按用户要求清理旧仓库文件：旧网页、旧 CLI、过时说明、未使用模型、已移除预览区的素材和未引用的样式副本均移出当前目录；清理文件在仓库之外备份，原 Git 历史保留。当前桌面版运行所需模型、工具、源代码和许可证继续保留。
 
 清理后 `npm run build` 与源码版 `node frontend/desktop/accept-node6.cjs` 完整验收通过。取消回归改为等待 4K 编码实际创建 partial 文件后再停止，发现并修复 Windows 终止进程与释放文件句柄的时序问题：先等待 taskkill 完成，临时文件遇占用时短暂重试，缓存使用有界重试，清理失败明确记录。低磁盘和进程生命周期测试同时支持开发 Python 的模块路径。复验结果保存在本机 `output/acceptance/node6/source-cleanup-report.json`；先前便携版报告独立保留，本次源码修复需重新构建后进入便携版。
+
+## 0.2.1：AI 尺寸规划与处理优化
+
+日期：2026-11-04。以下为本轮回归，不改写上述 0.2.0 历史结果。
+
+`python -X utf8 -m unittest discover -s processing -p test_planning.py` 六项通过，其中边界项遍历 50 组尺寸与策略组合，覆盖速度/质量、竖屏、奇数输入、降尺寸、大倍率、过低预算与比例取整。
+
+`node frontend/desktop/accept-optimization.cjs` 源码版通过；再传入 `desktop-release/win-unpacked/resources/runtime`，打包运行时同样通过。读取实际 PNG 而非只断言计划值，验证：
+
+- 720p→1080p 速度：960×540 输入，2×实际输出 1920×1080，无后续放大。
+- 720p→1080p 质量：1280×720 输入，2×实际输出 2560×1440，再缩至目标。
+- 720p→4K：原尺寸直接 3×至 3840×2160。
+- 9×目标：80×48 经两次 3×至 720×432；641×360 奇数模型输入实际得到 1923×1080。
+- 0.5 秒 60→24 fps：源 30 帧，实际只对 12 帧推理，目标 12 帧。
+- 过低体积预算在 AI 前失败；复制 AAC 的全码流 SHA256、RGB FFV1 缓存解码像素 SHA256 一致；源文件 SHA256 未变。
+
+源码报告：`output/acceptance/optimization/source-report.json`；打包运行时报告：`output/acceptance/optimization/report.json`。720p 尺寸测试使用 0.125 秒片段，其耗时不能外推长视频。
+
+`accept-node4.cjs` 与 `accept-node5.cjs` 均复验通过，覆盖 RIFE 有理数帧率、多块、降帧、音轨、完整解码、固定码率、动态质量和体积上限。5 秒、5 MB/分钟预算为 416666 字节，本轮 H.264 成片 318735 字节、H.265 成片 328825 字节。
+
+`npm run desktop:pack` 成功，0.2.1 目录版通过完整 `accept-node6.cjs`：随包工具与受限 PATH、原生导入和独立配置、AI/RIFE 与竖屏导出、取消与 partial 清理、恢复、ACL 只读目录、注入低磁盘空间及父进程退出清理。报告独立保存为 `output/acceptance/optimization/node6-packaged-report.json`。目录版共 843,359,072 字节，较先前减少 126,852,540 字节；模型仅收集六个 animevideov3 文件，Electron 语言仅保留中文与英文。
+
+本轮使用 ui-design-brain 核对策略说明及最小窗口；机器仍为 T1200 Laptop 4GB。RTX 4060、全新电脑和长视频耐久待测。RGB 缓存避免过早颜色抽样，但可能增加缓存体积；速度优先提高输出尺寸时现在实际承担 AI 放大，可能比旧流程更慢。改动和后续建议见 OPTIMIZATION.md。
+
+0.2.1 便携单文件已通过 `node frontend/desktop/accept-portable.cjs`：限制 PATH 后直接启动 EXE，确认原生窗口，再对实际解压的程序使用独立配置执行完整第 6 节点验收。结果独立保存为 `output/acceptance/optimization/node6-portable-report.json`。包体 238,493,843 字节，比上一版减少约 24.3%；SHA256 为 `9fa0dbf357a272f51358d2bc0a06e18dd7968b56a018990c34f3150e00fb2189`，校验文件 `desktop-release/FrameSequence-0.2.1.sha256`。
+
+## 0.2.2：行内进度、暂停与删除
+
+日期：2026-11-04。处理中和暂停中的任务显示进度条与百分比；正常宽度位于名称列右侧，较窄队列内移到文件信息下方。处理中操作列仅显示暂停和删除，暂停后改为继续和删除。已完成项恢复配置、输出位置和重试操作。
+
+新增当前任务暂停控制，与原有「暂停后续」独立。Windows 下按工作进程的专属 Job Object 查找所属进程，暂停工作进程及模型、编码子进程，恢复时校验 PID 与创建时间。独立 runner 保持父进程退出监控清醒，避免守护线程也被冻结而遗留后台进程。暂停保留显存和缓存，继续沿用原工作进程；关闭后重启仍记为中断，未宣称跨退出断点恢复。
+
+删除等待项直接移出；删除运行或暂停项先结束所属进程树并等待临时文件、缓存清理，再移出列表，保留源视频及已完成输出。其他任务继续按序运行。提交准备、暂停、继续、取消及删除相互协调，暂停项不重复入队，等待项删除后不会被准备阶段重新加入。
+
+`npm run desktop:pack` 和 `node frontend/desktop/accept-task-controls.cjs desktop-release/win-unpacked/FrameSequence.exe` 通过。实际桌面窗口与随包运行时验证：
+
+- 真实 AI 任务进度条、百分比、两按钮状态与暂停记录保存；1000×740、1440×940 窗口无页面横向溢出。
+- 暂停期间工作进程及模型进程 CPU 累计时间不增长，进度不变，下一项保持等待；继续使用相同 worker PID，后续任务按序完成，成片完整解码通过。
+- 删除等待项不影响暂停中的当前任务；删除暂停项和运行项后，所属进程、缓存、partial 文件均已清理；运行项删除后下一项完成；三个源文件 SHA256 不变。
+- 实际终止暂停时的 Electron 主进程，runner 及冻结的后代进程全部退出；重启后该项标为中断，无自动处理。Windows 下测试明确取得真实主进程 PID，未把 Playwright 启动包装进程 PID 当作主进程。
+
+专项报告 `output/playwright/task-controls/packaged-report.json`；截图 `desktop-paused.png`、`minimum-paused.png` 位于同一目录。原第 6 节点综合回归也通过，报告独立保存为 `output/playwright/task-controls/node6-packaged-report.json`。仍为本机 T1200 短片验收。
+
+`accept-task-queue.cjs` 补测删除与异步准备的两个交界：配置准备完成但尚未入队、已选中当前项但尚未启动工作进程。均确认被删除项不启动、不重新出现，下一项真实编码完成，源文件保留。结果 `output/playwright/task-controls/queue-boundary-report.json`。
+
+本轮使用 ui-design-brain 核对表格、进度和按钮状态，使用 Playwright 验收实际 Electron 窗口。
+
+0.2.2 便携包已通过 `node frontend/desktop/accept-portable.cjs --task-controls`，在单文件实际解压的运行时上完成第 6 节点与上述任务控制专项。专项还核对暂停/继续后实际输出帧数完整，暂停项及等待项不重复入队。报告为 `output/playwright/task-controls/portable-report.json` 与 `node6-portable-report.json`；运行中效果截图 `desktop-processing.png`。包体 238,496,587 字节，SHA256 为 `4eb44d159aaa591e8ccfd77003163391d5d09653bd366970624d9f42596245b0`，校验文件 `desktop-release/FrameSequence-0.2.2.sha256`。

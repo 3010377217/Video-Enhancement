@@ -2,9 +2,8 @@
 import os
 
 
-def final_encode(job, video_input, pipeline, vf, total_frames, partial, work, encode, event):
-    runtime, source, config = job['runtime'], job['source'], job['config']
-    encoder = job['encoder']
+def rate_budget(job):
+    source, config = job['source'], job['config']
     mode = config['rateControl']
     duration = source['duration']
     audio = config['audio'] and source['audio']
@@ -14,14 +13,28 @@ def final_encode(job, video_input, pipeline, vf, total_frames, partial, work, en
         bitrate = (limit * 0.92 - 8192) * 8 / duration - (192000 if audio else 0)
         if bitrate < 32000:
             raise RuntimeError('体积预算过低，无法容纳视频及音频，请提高上限或关闭音频')
+    return limit, bitrate
+
+
+def final_encode(job, video_input, pipeline, vf, total_frames, partial, work, encode, event):
+    runtime, source, config = job['runtime'], job['source'], job['config']
+    encoder, mode, duration = job['encoder'], config['rateControl'], source['duration']
+    audio = config['audio'] and source['audio']
+    limit, bitrate = rate_budget(job)
     base = [runtime['ffmpeg'], '-nostdin', '-v', 'error', '-n'] + video_input
     if pipeline:
         base += ['-i', source['path']]
-    base += ['-map', '0:v:0', '-vf', vf, '-c:v', encoder, '-preset', 'p5' if 'nvenc' in encoder else 'medium']
+    # A global -frames:v can terminate muxing before the last audio packets.
+    # Limit video inside its filter chain while allowing audio to reach -t.
+    base += ['-map', '0:v:0', '-vf', f'{vf},trim=end_frame={total_frames}', '-c:v', encoder, '-preset', 'p5' if 'nvenc' in encoder else 'medium']
     if config['codec'] == 'hevc':
         base += ['-tag:v', 'hvc1']
-    base += ['-pix_fmt', 'yuv420p', '-frames:v', str(total_frames), '-t', str(duration), '-map_metadata', '-1']
-    audio_args = ['-map', '1:a:0?' if pipeline else '0:a:0?', '-c:a', 'aac', '-b:a', '192k'] if audio else ['-an']
+    base += ['-pix_fmt', 'yuv420p', '-t', str(duration), '-map_metadata', '-1']
+    copy_audio = audio and source.get('audioCodec') == 'aac' and mode != 'size'
+    audio_args = ['-an']
+    if audio:
+        audio_args = ['-map', '1:a:0?' if pipeline else '0:a:0?']
+        audio_args += ['-c:a', 'copy'] if copy_audio else ['-c:a', 'aac', '-b:a', '192k']
     for attempt in range(3 if mode == 'size' else 1):
         partial.unlink(missing_ok=True)
         rate = []

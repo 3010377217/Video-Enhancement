@@ -31,7 +31,7 @@ def attach():
     kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
     kernel.CloseHandle.argtypes = [wintypes.HANDLE]
     limits = Extended(); limits.basic.flags = 0x2000
-    handle = kernel.CreateJobObjectW(None, None)
+    handle = kernel.CreateJobObjectW(None, f'Local\\FrameSequence-Worker-{os.getpid()}')
     if not handle or not kernel.SetInformationJobObject(handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
         raise RuntimeError('无法创建 Windows 任务进程组')
     if not kernel.AssignProcessToJobObject(handle, kernel.GetCurrentProcess()):

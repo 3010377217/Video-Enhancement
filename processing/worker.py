@@ -71,7 +71,7 @@ def filters(job):
             width, height = height, width
     width, height = max(16, width // 2 * 2), max(16, height // 2 * 2)
     if config['keepRatio'] and config['resolution'] != 'source':
-        factor = min(width / source['width'], height / source['height'])
+        factor = min(Fraction(width, source['width']), Fraction(height, source['height']))
         width = max(16, int(source['width'] * factor) // 2 * 2)
         height = max(16, int(source['height'] * factor) // 2 * 2)
     return width, height, f'scale={width}:{height}:flags=lanczos,setsar=1'
@@ -85,18 +85,20 @@ def process(job):
     work = Path(job['work'])
     work.mkdir(parents=True, exist_ok=False)
     try:
+        from encoding import final_encode, rate_budget
+        rate_budget(job)  # Reject impossible budgets before any AI work.
         target_fps = Fraction(source['fpsRational']) if config['fps'] == 'source' else Fraction(config['fps'])
         source_fps = Fraction(source['fpsRational'])
         pipeline = config['enhance'] == 'ai' or target_fps > source_fps
         if pipeline:
             from ai import enhance
             video_input, target_fps, total_frames = enhance(job, work, width, height, execute, encode, event)
+            vf = 'setsar=1'  # AI/RIFE frames already have the final dimensions.
         else:
             video_input = ['-i', source['path']]
             total_frames = max(1, round(source['duration'] * float(target_fps)))
             if config['fps'] != 'source' or source.get('vfr'):
                 vf += f',fps={target_fps}'
-        from encoding import final_encode
         final_encode(job, video_input, pipeline, vf, total_frames, partial, work, encode, event)
         event('progress', stage='校验成片', progress=0.96)
         result = metadata(partial, runtime)
@@ -122,6 +124,10 @@ def process(job):
     finally:
         partial.unlink(missing_ok=True)
         shutil.rmtree(work, ignore_errors=True)
+        try:
+            work.parent.rmdir()  # Remove the shared cache folder only when no task is using it.
+        except OSError:
+            pass
 
 
 if __name__ == '__main__':

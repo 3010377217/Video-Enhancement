@@ -27,6 +27,7 @@ async function probe(file, runtime) {
     width: rotated ? video.height : video.width, height: rotated ? video.width : video.height,
     codedWidth: video.width, codedHeight: video.height, rotation, fps, fpsRational, duration,
     codec: video.codec_name, audio: data.streams.some(stream => stream.codec_type === 'audio'),
+    audioCodec: data.streams.find(stream => stream.codec_type === 'audio')?.codec_name,
     hdr: ['smpte2084', 'arib-std-b67'].includes(video.color_transfer),
     bitDepth: rawDepth > 0 ? rawDepth : pixelDepth ? Number(pixelDepth[1]) : /(?:rgb|bgr|rgba|bgra)(?:48|64)/.test(video.pix_fmt ?? '') ? 16 : 8,
     sar: video.sample_aspect_ratio ?? '1:1',

@@ -1,4 +1,5 @@
 import { useId } from 'react';
+import { Segments } from './ui';
 
 export type OutputOptions = {
   rateControl: 'fixed' | 'dynamic' | 'size';
@@ -98,11 +99,6 @@ function recommendation(config: Settings, sources: Source[]) {
   return { context, range, notes };
 }
 
-const methods = [
-  { value: 'fixed', label: '固定码率' },
-  { value: 'dynamic', label: '动态码率' },
-  { value: 'size', label: '体积限制' },
-] as const;
 
 export default function OutputSettings({ config, sources, onChange }: {
   config: Settings; sources: Source[];
@@ -110,65 +106,26 @@ export default function OutputSettings({ config, sources, onChange }: {
 }) {
   const id = useId();
   const error = outputError(config);
-  const suggested = recommendation(config, sources);
-  const budget = Number(config.sizeLimit) * 8 / 60;
-  const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
-  return <fieldset className="output-settings">
-    <legend className="field-label">输出控制</legend>
-    <div className="rate-methods">
-      {methods.map(method => <label key={method.value}>
-        <input type="radio" name={`${id}-rate-control`} value={method.value}
-          checked={config.rateControl === method.value} onChange={() => onChange({ rateControl: method.value })} />
-        {method.label}
-      </label>)}
+  const fixed = config.rateControl === 'fixed';
+  const suggested = fixed ? recommendation(config, sources) : null;
+  const inputId = `${id}-value`;
+  return <div className="field">
+    <span className="field-label">输出方式</span>
+    <Segments label="输出方式" value={fixed ? 'fixed' : 'dynamic'} onChange={value => onChange({ rateControl: value })}
+      options={[{ value: 'dynamic', label: '动态码率' }, { value: 'fixed', label: '固定码率' }]} />
+    <div className="value-row">
+      <label htmlFor={inputId}>{fixed ? '视频码率' : '质量值'}</label>
+      <input id={inputId} type="number" inputMode={fixed ? 'decimal' : 'numeric'} step={fixed ? 'any' : '1'}
+        min={fixed ? '0.1' : '1'} max={fixed ? '1000' : '51'}
+        value={fixed ? config.bitrate : config.qualityValue}
+        onChange={event => onChange(fixed ? { bitrate: event.target.value } : { qualityValue: event.target.value })}
+        aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined} />
+      <span>{fixed ? 'Mbps' : 'CRF / CQ'}</span>
     </div>
-      <div className="rate-details">
-        {config.rateControl === 'fixed' && <>
-          <label className="field-label" htmlFor={`${id}-bitrate`}>视频码率</label>
-          <div className="number-with-unit">
-            <input id={`${id}-bitrate`} type="number" min="0.1" max="1000" step="any" inputMode="decimal"
-              value={config.bitrate} onChange={event => onChange({ bitrate: event.target.value })}
-              aria-invalid={Boolean(error)} aria-describedby={`${hintId}${error ? ` ${errorId}` : ''}`} />
-            <span>Mbps</span>
-          </div>
-          <div className="rate-hints" id={hintId}>
-            <p className="recommendation-context">{suggested.context}</p>
-            <p className="field-hint">{suggested.range ? <>建议 <strong>{suggested.range} Mbps</strong>，仅作经验参考。</> : '源尺寸待识别，请先指定输出分辨率。'}</p>
-            <p className="field-hint">{suggested.notes || '画面越复杂，通常需要越高的码率。'}</p>
-          </div>
-        </>}
-        {config.rateControl === 'dynamic' && <>
-          <label className="field-label" htmlFor={`${id}-quality`}>质量值（CQ / CRF）</label>
-          <div className="number-with-unit">
-            <input id={`${id}-quality`} type="number" min="1" max="51" step="1" inputMode="numeric"
-              value={config.qualityValue} onChange={event => onChange({ qualityValue: event.target.value })}
-              aria-invalid={Boolean(error)} aria-describedby={`${hintId}${error ? ` ${errorId}` : ''}`} />
-            <span>1～51</span>
-          </div>
-          <div className="rate-hints" id={hintId}>
-            <p className="field-hint">建议 <strong>18～28</strong>，可从 <strong>23</strong> 开始。</p>
-            <p className="field-hint">数值越小，画质越高、文件越大。</p>
-            <p className="field-hint">码率随画面复杂度变化；不同编码器的数值不宜直接比较。</p>
-            <p className="field-hint">硬件编码使用 CQ，软件回退使用 CRF，实际编码器显示在任务状态中。</p>
-          </div>
-        </>}
-        {config.rateControl === 'size' && <>
-          <label className="field-label" htmlFor={`${id}-size`}>每分钟体积上限</label>
-          <div className="number-with-unit size-budget">
-            <span>1 分钟最多</span>
-            <input id={`${id}-size`} type="number" min="0.1" step="any" inputMode="decimal"
-              value={config.sizeLimit} onChange={event => onChange({ sizeLimit: event.target.value })}
-              aria-invalid={Boolean(error)} aria-describedby={`${hintId}${error ? ` ${errorId}` : ''}`} />
-            <span>MB</span>
-          </div>
-          <div className="rate-hints" id={hintId}>
-            {!error && <p className="field-hint">总码率预算约 <strong>{number(budget)} Mbps</strong>。</p>}
-            <p className="field-hint">{config.audio ? '视频、音频与封装共用此上限。' : '视频与封装共用此上限。'}体积越小，画质越受限。</p>
-            <p className="field-hint">按总时长折算总文件上限，使用软件编码并校验成片大小。</p>
-          </div>
-        </>}
-        {error && <p className="inline-error" id={errorId} role="alert">{error}</p>}
-      </div>
-  </fieldset>;
+    <p className="field-hint">{fixed
+      ? (suggested?.range ? `建议 ${suggested.range} Mbps` : '')
+      : '建议 18～28，数值越小画质越高'}</p>
+    {error && <p className="inline-error" id={errorId} role="alert">{error}</p>}
+  </div>;
 }

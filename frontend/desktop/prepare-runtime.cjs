@@ -5,6 +5,8 @@ const { getRuntime, command } = require('./runtime.cjs');
 async function main() {
   const root = path.resolve(__dirname, '..', '..'), output = path.join(root, 'frontend', '.cache', 'runtime');
   const runtime = await getRuntime(root);
+  if (path.dirname(output) !== path.join(root, 'frontend', '.cache') || path.basename(output) !== 'runtime') throw new Error('无效的运行时缓存目录');
+  await fs.rm(output, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   await fs.mkdir(path.join(output, 'tools'), { recursive: true });
   const tools = {};
   for (const name of ['ffmpeg', 'ffprobe']) {
@@ -12,8 +14,12 @@ async function main() {
     tools[name] = found.stdout.trim().split(/\r?\n/)[0];
     await fs.copyFile(tools[name], path.join(output, 'tools', `${name}.exe`));
   }
-  const copy = async (from, to) => { await fs.mkdir(path.dirname(to), { recursive: true }); await fs.cp(from, to, { recursive: true, filter: file => !file.includes('__pycache__') }); };
-  for (const file of ['realesrgan-ncnn-vulkan.exe', 'vcomp140.dll', 'models', 'processing', 'onepiece_demo.mp4']) await copy(path.join(root, file), path.join(output, file));
+  const copy = async (from, to) => { await fs.mkdir(path.dirname(to), { recursive: true }); await fs.cp(from, to, { recursive: true, filter: file => !file.includes('__pycache__') && !path.basename(file).startsWith('test_') }); };
+  for (const file of ['realesrgan-ncnn-vulkan.exe', 'vcomp140.dll', 'processing', 'onepiece_demo.mp4']) await copy(path.join(root, file), path.join(output, file));
+  for (const scale of [2, 3, 4]) for (const ext of ['bin', 'param']) {
+    const relative = path.join('models', `realesr-animevideov3-x${scale}.${ext}`);
+    await copy(path.join(root, relative), path.join(output, relative));
+  }
   for (const file of ['rife-ncnn-vulkan.exe', 'rife-v4.6', 'vcomp140.dll', 'LICENSE']) await copy(path.join(root, 'rife-ncnn-vulkan-20221029-windows', file), path.join(output, 'rife-ncnn-vulkan-20221029-windows', file));
   const pythonRoot = (await command(runtime.python, ['-X', 'utf8', '-c', 'import sys; print(sys.base_prefix)'])).stdout.trim();
   const pythonDir = path.join(output, 'python'); await fs.mkdir(pythonDir, { recursive: true });

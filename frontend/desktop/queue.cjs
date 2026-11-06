@@ -11,13 +11,14 @@ class Queue {
     this.pumping = false;
     this.enqueueing = Promise.resolve();
     this.generation = 0;
+    this.removing = new Set();
   }
   async load() {
     try {
       const data = JSON.parse(await fs.readFile(this.stateFile, 'utf8'));
       if (data.version !== 1 || !Array.isArray(data.tasks) || !Array.isArray(data.videos)) return;
       for (const video of data.videos) if (typeof video.path === 'string' && typeof video.id === 'string') this.library.items.set(video.id, video);
-      this.tasks = data.tasks.map(task => ['waiting', 'started', 'progress'].includes(task.status) ? { ...task, status: 'interrupted', event: { ...task.event, type: 'interrupted', error: '应用退出时任务尚未完成，可重试' } } : task);
+      this.tasks = data.tasks.map(task => ['waiting', 'started', 'progress', 'paused'].includes(task.status) ? { ...task, status: 'interrupted', event: { ...task.event, type: 'interrupted', error: '应用退出时任务尚未完成，可重试' } } : task);
       this.settings = data.settings;
       for (const task of this.tasks) if (task.status === 'completed') this.jobs.results.set(task.id, task.output);
       this.paused = true;
@@ -41,11 +42,11 @@ class Queue {
   async enqueueActual(items) {
     if (!Array.isArray(items) || !items.length || items.length > 2000) throw new Error('任务列表无效');
     const generation = this.generation;
-    const reserved = new Set(this.tasks.filter(task => ['waiting', 'started', 'progress'].includes(task.status)).map(task => task.output.toLowerCase()));
+    const reserved = new Set(this.tasks.filter(task => ['waiting', 'started', 'progress', 'paused'].includes(task.status)).map(task => task.output.toLowerCase()));
     const prepared = [];
     for (const item of items) {
       if (generation !== this.generation) break;
-      if (this.tasks.some(task => task.videoId === item.id && ['waiting', 'started', 'progress'].includes(task.status))) continue;
+      if (this.removing.has(item.id) || !this.library.items.has(item.id) || this.tasks.some(task => task.videoId === item.id && ['waiting', 'started', 'progress', 'paused'].includes(task.status))) continue;
       try { prepared.push({ ...await this.jobs.prepare(item.id, item.config, reserved), status: 'waiting' }); }
       catch (error) {
         const id = randomUUID();
@@ -53,7 +54,7 @@ class Queue {
       }
     }
     if (generation !== this.generation) return this.snapshot();
-    for (const job of prepared) this.tasks.push({ ...job, event: job.event ?? { type: 'waiting', videoId: job.videoId, jobId: job.id } });
+    for (const job of prepared) if (this.library.items.has(job.videoId) && !this.removing.has(job.videoId)) this.tasks.push({ ...job, event: job.event ?? { type: 'waiting', videoId: job.videoId, jobId: job.id } });
     this.paused = false; await this.save(); this.broadcast(); void this.pump();
     return this.snapshot();
   }
@@ -62,12 +63,15 @@ class Queue {
     this.pumping = true;
     const generation = this.generation;
     try {
-      const task = this.tasks.find(task => task.status === 'waiting');
+      const task = this.tasks.find(task => task.status === 'waiting' && !this.removing.has(task.videoId));
       if (!task) return;
       task.status = 'started'; task.runtime = this.jobs.runtime; await this.save();
-      if (generation !== this.generation) { task.status = 'cancelled'; task.event.type = 'cancelled'; await this.save(); this.broadcast(); return; }
+      if (generation !== this.generation || this.removing.has(task.videoId) || !this.tasks.includes(task)) { task.status = 'cancelled'; task.event.type = 'cancelled'; await this.save(); this.broadcast(); return; }
       this.jobs.run(task);
-    } finally { this.pumping = false; }
+    } finally {
+      this.pumping = false;
+      if (!this.jobs.active && !this.paused && this.tasks.some(task => task.status === 'waiting' && !this.removing.has(task.videoId))) queueMicrotask(() => void this.pump());
+    }
   }
   onEvent(event) {
     const task = this.tasks.find(task => task.id === event.jobId);
@@ -102,9 +106,19 @@ class Queue {
     for (const [id, config] of Object.entries(settings.overrides ?? {})) if (this.library.items.has(id)) overrides[id] = validate(config);
     this.settings = { global, overrides }; return this.save();
   }
-  remove(ids) {
-    if (this.tasks.some(task => ids.includes(task.videoId) && ['waiting', 'started', 'progress'].includes(task.status))) throw new Error('请先停止队列再移除等待或处理中的视频');
-    this.library.remove(ids); this.tasks = this.tasks.filter(task => !ids.includes(task.videoId)); void this.save(); this.broadcast();
+  async remove(ids) {
+    if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string')) throw new Error('无效的视频列表');
+    for (const id of ids) this.removing.add(id);
+    try {
+      for (const task of this.tasks) if (ids.includes(task.videoId) && task.status === 'waiting') { task.status = 'cancelled'; task.event.type = 'cancelled'; }
+      if (ids.includes(this.jobs.active?.job?.videoId)) await this.jobs.cancel();
+      this.library.remove(ids); this.tasks = this.tasks.filter(task => !ids.includes(task.videoId));
+      if (this.settings) for (const id of ids) delete this.settings.overrides[id];
+      await this.save(); this.broadcast();
+    } finally {
+      for (const id of ids) this.removing.delete(id);
+      void this.pump();
+    }
   }
 }
 module.exports = { Queue };

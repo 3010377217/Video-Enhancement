@@ -35,6 +35,8 @@ async function setup() {
   handle('settings', settings => queue.saveSettings(settings));
   handle('start', (id, config) => jobs.start(id, config));
   handle('cancel', () => jobs.cancel());
+  handle('pause-task', id => jobs.controlCurrent(id, 'pause'));
+  handle('resume-task', id => jobs.controlCurrent(id, 'resume'));
   handle('show-result', id => { const file = jobs.results.get(id); if (!file) throw new Error('没有已完成的输出文件'); shell.showItemInFolder(file); });
   handle('choose-videos', async () => {
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile', 'multiSelections'], filters: [{ name: '视频', extensions: ['mp4', 'mkv', 'mov', 'avi', 'webm', 'm4v'] }] });
@@ -43,7 +45,7 @@ async function setup() {
   });
   handle('import', async paths => { const imported = await library.import(paths); await queue.save(); return imported; });
   handle('sample', async () => { const imported = await library.import([app.isPackaged ? path.join(process.resourcesPath, 'runtime', 'onepiece_demo.mp4') : path.resolve(__dirname, '..', '..', 'onepiece_demo.mp4')]); await queue.save(); return imported; });
-  handle('remove', ids => { if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string')) throw new Error('无效的视频列表'); queue.remove(ids); });
+  handle('remove', ids => { if (!Array.isArray(ids) || ids.some(id => typeof id !== 'string')) throw new Error('无效的视频列表'); return queue.remove(ids); });
   handle('choose-directory', async current => {
     const result = await dialog.showOpenDialog(mainWindow, { defaultPath: typeof current === 'string' ? current : app.getPath('videos'), properties: ['openDirectory', 'createDirectory'] });
     return result.canceled ? null : writableDirectory(result.filePaths[0]);

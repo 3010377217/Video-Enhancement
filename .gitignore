@@ -34,3 +34,6 @@ frontend/.playwright-cli/
 # Optional RIFE models are not used by the desktop runtime
 rife-ncnn-vulkan-20221029-windows/rife*/
 !rife-ncnn-vulkan-20221029-windows/rife-v4.6/
+
+# Default processing cache beside the program
+framesequence/
